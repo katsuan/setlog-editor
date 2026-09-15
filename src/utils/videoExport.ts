@@ -3,6 +3,14 @@ import { formatTimecode } from './time'
 
 export const CUT_DURATION = 2 // seconds per log entry
 
+// H.264 encoders generally require even width/height (macroblock alignment);
+// an odd dimension (common on cropped/downloaded photos) can make the
+// MediaRecorder either fail outright or emit a file that later fails to
+// decode. Round down to the nearest even number to stay safe.
+function toEvenDimension(n: number): number {
+  return n - (n % 2)
+}
+
 function drawOverlayText(
   ctx: CanvasRenderingContext2D,
   w: number,
@@ -96,8 +104,8 @@ export async function renderOverlayVideo(
   if (!sorted.length) throw new Error('カットがありません')
 
   const canvas = document.createElement('canvas')
-  canvas.width = video.videoWidth
-  canvas.height = video.videoHeight
+  canvas.width = toEvenDimension(video.videoWidth)
+  canvas.height = toEvenDimension(video.videoHeight)
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('Canvas 2D context を取得できませんでした')
 
@@ -231,8 +239,8 @@ export async function renderImageClip(
   const img = await loadImage(imageBlob)
 
   const canvas = document.createElement('canvas')
-  canvas.width = img.naturalWidth
-  canvas.height = img.naturalHeight
+  canvas.width = toEvenDimension(img.naturalWidth)
+  canvas.height = toEvenDimension(img.naturalHeight)
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('Canvas 2D context を取得できませんでした')
 
@@ -316,8 +324,8 @@ export async function combineClips(
       clipVideos.push(clipVideo)
     }
 
-    const width = clipVideos[0].videoWidth
-    const height = clipVideos[0].videoHeight
+    const width = toEvenDimension(clipVideos[0].videoWidth)
+    const height = toEvenDimension(clipVideos[0].videoHeight)
 
     const canvas = document.createElement('canvas')
     canvas.width = width
