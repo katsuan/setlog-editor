@@ -110,12 +110,22 @@ export async function renderOverlayVideo(
     recorder.onerror = (e) => reject(e)
   })
 
+  // Paint the first frame before recording starts — otherwise the recorder
+  // captures a few frames of the still-blank (black) canvas while we wait
+  // for the initial seek/play to complete.
+  await seekTo(video, Math.min(sorted[0].time, video.duration || sorted[0].time))
+  drawFrame(ctx, video, canvas, sorted[0])
   recorder.start()
 
   try {
     for (let i = 0; i < sorted.length; i++) {
       const entry = sorted[i]
-      await seekTo(video, Math.min(entry.time, video.duration || entry.time))
+      if (i > 0) {
+        await seekTo(video, Math.min(entry.time, video.duration || entry.time))
+        // Paint immediately after seeking so the canvas never shows a stale
+        // or blank frame while play() is still buffering.
+        drawFrame(ctx, video, canvas, entry)
+      }
       await video.play()
 
       const segmentStart = performance.now()
