@@ -3,6 +3,7 @@ import VideoPlayer from './components/VideoPlayer'
 import LogList from './components/LogList'
 import type { LogEntry, ProjectState } from './types'
 import { addMinutesToClock, formatTimecode, roundToHalfHour } from './utils/time'
+import { readPhotoShootTime, readVideoShootTime } from './utils/mediaMetadata'
 import TimeSelect from './components/TimeSelect'
 import { exportCsv, exportJson, exportSrt } from './utils/export'
 import { CUT_DURATION, combineClips, renderImageClip, renderOverlayVideo } from './utils/videoExport'
@@ -72,6 +73,8 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const importInputRef = useRef<HTMLInputElement>(null)
   const clipImportInputRef = useRef<HTMLInputElement>(null)
+  const currentVideoFileRef = useRef<File | null>(null)
+  const currentPhotoFileRef = useRef<File | null>(null)
 
   const handleVideoFile = useCallback((file: File) => {
     const url = URL.createObjectURL(file)
@@ -83,12 +86,24 @@ export default function App() {
     setActiveId(null)
     // exportedClips intentionally persists across video switches — combining
     // is meant to span cuts taken from multiple different source videos.
+
+    currentVideoFileRef.current = file
+    if (!loaded.baseClockTime) {
+      readVideoShootTime(file).then((t) => {
+        if (t && currentVideoFileRef.current === file) setBaseClockTime(t)
+      })
+    }
   }, [])
 
   const handlePhotoFile = useCallback((file: File) => {
     setPhotoFile(file)
     setPhotoClockTime('')
     setPhotoCaption('')
+
+    currentPhotoFileRef.current = file
+    readPhotoShootTime(file).then((t) => {
+      if (t && currentPhotoFileRef.current === file) setPhotoClockTime(roundToHalfHour(t))
+    })
   }, [])
 
   const handleMediaFile = useCallback(

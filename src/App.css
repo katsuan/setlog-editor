@@ -341,21 +341,36 @@ button:disabled {
   opacity: 0.8;
 }
 
-.log-clock-time {
-  width: 6rem;
+.time-select {
+  display: inline-flex;
+  align-items: center;
   flex: none;
   background: var(--card);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
+  min-height: 2.5rem;
+  padding: 0 0.35rem;
+}
+
+.time-select-hour,
+.time-select-minute {
+  background: transparent;
+  border: none;
   color: var(--text);
   font-size: 16px;
   font-variant-numeric: tabular-nums;
-  padding: 0.5rem;
+  padding: 0.5rem 0.1rem;
   min-height: 2.5rem;
   cursor: pointer;
+  min-width: 0;
 }
 
-.log-clock-time:focus {
+.time-select-colon {
+  color: var(--text-muted);
+}
+
+.time-select-hour:focus,
+.time-select-minute:focus {
   outline: 2px solid var(--primary);
 }
 
