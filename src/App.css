@@ -57,11 +57,25 @@
 
   .clip-row {
     flex-wrap: wrap;
+    gap: 0.5rem;
   }
 
   .clip-label {
     flex-basis: 100%;
     white-space: normal;
+  }
+
+  .clip-row > button {
+    flex: 1;
+    min-width: 3rem;
+  }
+
+  .clip-list {
+    gap: 0.6rem;
+  }
+
+  .photo-section .clip-row {
+    gap: 0.5rem;
   }
 }
 
