@@ -11,6 +11,25 @@ function toEvenDimension(n: number): number {
   return n - (n % 2)
 }
 
+// Real-time decode + canvas draw + MediaRecorder encode all compete for the
+// same thread; on high-resolution source video (4K phone footage is common)
+// that combined load can exceed what the device keeps up with, which shows
+// up as stutter — more pronounced on some videos than others depending on
+// their resolution. Capping the export canvas keeps per-frame work bounded
+// regardless of source resolution. 1280px covers typical SNS/story output
+// comfortably while meaningfully cutting decode/draw/encode cost for 4K
+// input.
+const MAX_EXPORT_DIMENSION = 1280
+
+function fitDimensions(width: number, height: number): { width: number; height: number } {
+  const longSide = Math.max(width, height)
+  const scale = longSide > MAX_EXPORT_DIMENSION ? MAX_EXPORT_DIMENSION / longSide : 1
+  return {
+    width: toEvenDimension(Math.round(width * scale)),
+    height: toEvenDimension(Math.round(height * scale)),
+  }
+}
+
 function drawOverlayText(
   ctx: CanvasRenderingContext2D,
   w: number,
@@ -111,8 +130,9 @@ export async function renderOverlayVideo(
   if (!sorted.length) throw new Error('カットがありません')
 
   const canvas = document.createElement('canvas')
-  canvas.width = toEvenDimension(video.videoWidth)
-  canvas.height = toEvenDimension(video.videoHeight)
+  const { width: canvasWidth, height: canvasHeight } = fitDimensions(video.videoWidth, video.videoHeight)
+  canvas.width = canvasWidth
+  canvas.height = canvasHeight
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('Canvas 2D context を取得できませんでした')
 
@@ -246,8 +266,9 @@ export async function renderImageClip(
   const img = await loadImage(imageBlob)
 
   const canvas = document.createElement('canvas')
-  canvas.width = toEvenDimension(img.naturalWidth)
-  canvas.height = toEvenDimension(img.naturalHeight)
+  const { width: canvasWidth, height: canvasHeight } = fitDimensions(img.naturalWidth, img.naturalHeight)
+  canvas.width = canvasWidth
+  canvas.height = canvasHeight
   const ctx = canvas.getContext('2d')
   if (!ctx) throw new Error('Canvas 2D context を取得できませんでした')
 
@@ -331,8 +352,7 @@ export async function combineClips(
       clipVideos.push(clipVideo)
     }
 
-    const width = toEvenDimension(clipVideos[0].videoWidth)
-    const height = toEvenDimension(clipVideos[0].videoHeight)
+    const { width, height } = fitDimensions(clipVideos[0].videoWidth, clipVideos[0].videoHeight)
 
     const canvas = document.createElement('canvas')
     canvas.width = width
