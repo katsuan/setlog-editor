@@ -176,6 +176,21 @@ export default function App() {
 
   const exportedIds = useMemo(() => new Set(exportedClips.map((c) => c.id)), [exportedClips])
 
+  // Auto-sort the combine list by shooting time (撮影時刻); clips with no
+  // clock time set sort to the end, keeping their original relative order.
+  const sortedExportedClips = useMemo(() => {
+    return exportedClips
+      .map((clip, index) => ({ clip, index }))
+      .sort((a, b) => {
+        if (!a.clip.clockTime && !b.clip.clockTime) return a.index - b.index
+        if (!a.clip.clockTime) return 1
+        if (!b.clip.clockTime) return -1
+        if (a.clip.clockTime !== b.clip.clockTime) return a.clip.clockTime < b.clip.clockTime ? -1 : 1
+        return a.index - b.index
+      })
+      .map((x) => x.clip)
+  }, [exportedClips])
+
   const exportEntryClip = useCallback(
     async (entry: LogEntry) => {
       const video = videoRef.current
@@ -238,23 +253,13 @@ export default function App() {
     e.target.value = ''
   }
 
-  const moveExportedClip = (index: number, direction: -1 | 1) => {
-    setExportedClips((prev) => {
-      const target = index + direction
-      if (target < 0 || target >= prev.length) return prev
-      const next = [...prev]
-      ;[next[index], next[target]] = [next[target], next[index]]
-      return next
-    })
-  }
-
   const combineAndSave = useCallback(async () => {
-    if (!exportedClips.length) return
+    if (!sortedExportedClips.length) return
     setIsCombining(true)
     setCombineProgress(0)
     try {
       const blob = await combineClips(
-        exportedClips.map((c) => c.blob),
+        sortedExportedClips.map((c) => c.blob),
         { onProgress: setCombineProgress },
       )
       const ext = blob.type.includes('mp4') ? 'mp4' : 'webm'
@@ -265,7 +270,7 @@ export default function App() {
     } finally {
       setIsCombining(false)
     }
-  }, [exportedClips])
+  }, [sortedExportedClips])
 
   const exportPhotoClip = useCallback(async () => {
     if (!photoFile) return
@@ -439,7 +444,7 @@ export default function App() {
         <section className="export-section">
           <h2>結合 ({exportedClips.length})</h2>
           <p className="combine-status">
-            書き出したカット（複数の動画・写真から集めたものでもOK）をまとめて1本の動画に結合します。
+            書き出したカット（複数の動画・写真から集めたものでもOK）を撮影時刻順に自動で並べ、1本の動画に結合します。
           </p>
           <button className="link-toggle" onClick={() => clipImportInputRef.current?.click()}>
             ▸ 保存済みのクリップファイルを読み込んで追加
@@ -452,34 +457,18 @@ export default function App() {
             hidden
             onChange={onImportClips}
           />
-          {exportedClips.length === 0 ? (
+          {sortedExportedClips.length === 0 ? (
             <p className="combine-status">
               まだ書き出したカットがありません。上の「カットを書き出す」で書き出してください。
             </p>
           ) : (
             <ul className="clip-list">
-              {exportedClips.map((clip, index) => (
+              {sortedExportedClips.map((clip, index) => (
                 <li key={clip.id} className="clip-row">
                   <span className="clip-label">
-                    {index + 1}. [{clip.videoName}] {clip.clockTime}
+                    {index + 1}. [{clip.videoName}] {clip.clockTime || '時刻未設定'}
                     {clip.caption ? ` ／ ${clip.caption}` : ''}
                   </span>
-                  <button
-                    onClick={() => moveExportedClip(index, -1)}
-                    disabled={index === 0}
-                    title="上に移動"
-                    aria-label="上に移動"
-                  >
-                    ▲
-                  </button>
-                  <button
-                    onClick={() => moveExportedClip(index, 1)}
-                    disabled={index === exportedClips.length - 1}
-                    title="下に移動"
-                    aria-label="下に移動"
-                  >
-                    ▼
-                  </button>
                   <button
                     className="log-delete"
                     onClick={() => removeExportedClip(clip.id)}
