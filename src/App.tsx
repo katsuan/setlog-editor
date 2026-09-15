@@ -60,7 +60,6 @@ export default function App() {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [baseClockTime, setBaseClockTime] = useState('')
   const [showMoreExports, setShowMoreExports] = useState(false)
-  const [showPhotoSection, setShowPhotoSection] = useState(false)
   const [exportedClips, setExportedClips] = useState<ExportedClip[]>([])
   const [exportingEntryId, setExportingEntryId] = useState<string | null>(null)
   const [isCombining, setIsCombining] = useState(false)
@@ -72,7 +71,6 @@ export default function App() {
   const videoRef = useRef<HTMLVideoElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const importInputRef = useRef<HTMLInputElement>(null)
-  const photoInputRef = useRef<HTMLInputElement>(null)
   const clipImportInputRef = useRef<HTMLInputElement>(null)
 
   const handleVideoFile = useCallback((file: File) => {
@@ -87,15 +85,35 @@ export default function App() {
     // is meant to span cuts taken from multiple different source videos.
   }, [])
 
+  const handlePhotoFile = useCallback((file: File) => {
+    setPhotoFile(file)
+    setPhotoClockTime('')
+    setPhotoCaption('')
+  }, [])
+
+  const handleMediaFile = useCallback(
+    (file: File) => {
+      if (file.type.startsWith('image/')) {
+        handlePhotoFile(file)
+      } else {
+        handleVideoFile(file)
+      }
+    },
+    [handleVideoFile, handlePhotoFile],
+  )
+
   const onFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (file) handleVideoFile(file)
+    if (file) handleMediaFile(file)
+    e.target.value = ''
   }
 
   const onDrop = (e: React.DragEvent) => {
     e.preventDefault()
     const file = e.dataTransfer.files?.[0]
-    if (file && file.type.startsWith('video/')) handleVideoFile(file)
+    if (file && (file.type.startsWith('video/') || file.type.startsWith('image/'))) {
+      handleMediaFile(file)
+    }
   }
 
   const markHere = useCallback(() => {
@@ -249,16 +267,6 @@ export default function App() {
     }
   }, [exportedClips])
 
-  const onPhotoInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0]
-    if (file) {
-      setPhotoFile(file)
-      setPhotoClockTime('')
-      setPhotoCaption('')
-    }
-    e.target.value = ''
-  }
-
   const exportPhotoClip = useCallback(async () => {
     if (!photoFile) return
     setIsExportingPhoto(true)
@@ -340,11 +348,11 @@ export default function App() {
             </div>
           )}
           <div className="file-controls">
-            <button onClick={() => fileInputRef.current?.click()}>動画ファイルを開く</button>
+            <button onClick={() => fileInputRef.current?.click()}>動画または写真を選ぶ</button>
             <input
               ref={fileInputRef}
               type="file"
-              accept="video/*"
+              accept="video/*,image/*"
               hidden
               onChange={onFileInputChange}
             />
@@ -407,47 +415,26 @@ export default function App() {
           />
         </section>
 
-        <section className="photo-section">
-          <button className="link-toggle" onClick={() => setShowPhotoSection((v) => !v)}>
-            {showPhotoSection ? '▾ 写真を追加を閉じる' : '▸ ＋ 写真を追加'}
-          </button>
-          {showPhotoSection && (
-            <>
-              <p className="combine-status">
-                写真を {CUT_DURATION} 秒間の静止画クリップにして、結合リストに追加できます。
-              </p>
-              <div className="file-controls">
-                <button onClick={() => photoInputRef.current?.click()}>写真を選ぶ</button>
-                <input
-                  ref={photoInputRef}
-                  type="file"
-                  accept="image/*"
-                  hidden
-                  onChange={onPhotoInputChange}
-                />
-                {photoFile && <span className="video-name">{photoFile.name}</span>}
-              </div>
-              {photoFile && (
-                <div className="clip-row">
-                  <TimeSelect
-                    className="log-clock-time"
-                    value={photoClockTime}
-                    onChange={setPhotoClockTime}
-                  />
-                  <input
-                    className="log-caption"
-                    value={photoCaption}
-                    placeholder="キャプションを入力..."
-                    onChange={(e) => setPhotoCaption(e.target.value)}
-                  />
-                  <button onClick={exportPhotoClip} disabled={isExportingPhoto}>
-                    {isExportingPhoto ? '書き出し中…' : `${CUT_DURATION}秒クリップとして書き出す`}
-                  </button>
-                </div>
-              )}
-            </>
-          )}
-        </section>
+        {photoFile && (
+          <section className="photo-section">
+            <h2>写真をクリップにする</h2>
+            <p className="combine-status">
+              「{photoFile.name}」を {CUT_DURATION} 秒間の静止画クリップにして、結合リストに追加します。
+            </p>
+            <div className="clip-row">
+              <TimeSelect className="log-clock-time" value={photoClockTime} onChange={setPhotoClockTime} />
+              <input
+                className="log-caption"
+                value={photoCaption}
+                placeholder="キャプションを入力..."
+                onChange={(e) => setPhotoCaption(e.target.value)}
+              />
+              <button onClick={exportPhotoClip} disabled={isExportingPhoto}>
+                {isExportingPhoto ? '書き出し中…' : `${CUT_DURATION}秒クリップとして書き出す`}
+              </button>
+            </div>
+          </section>
+        )}
 
         <section className="export-section">
           <h2>結合 ({exportedClips.length})</h2>
