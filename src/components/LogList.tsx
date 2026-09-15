@@ -6,6 +6,7 @@ interface Props {
   activeId: string | null
   onSeek: (time: number) => void
   onPreview: (time: number) => void
+  onChangeClockTime: (id: string, clockTime: string) => void
   onChangeCaption: (id: string, caption: string) => void
   onDelete: (id: string) => void
 }
@@ -15,6 +16,7 @@ export default function LogList({
   activeId,
   onSeek,
   onPreview,
+  onChangeClockTime,
   onChangeCaption,
   onDelete,
 }: Props) {
@@ -39,11 +41,17 @@ export default function LogList({
             ▶︎ プレビュー
           </button>
           <input
+            className="log-clock-time"
+            value={entry.clockTime}
+            placeholder="撮影時刻 例: 11:00"
+            onChange={(e) => onChangeClockTime(entry.id, e.target.value)}
+            autoFocus={entry.id === activeId}
+          />
+          <input
             className="log-caption"
             value={entry.caption}
             placeholder="キャプションを入力..."
             onChange={(e) => onChangeCaption(entry.id, e.target.value)}
-            autoFocus={entry.id === activeId}
           />
           <button className="log-delete" onClick={() => onDelete(entry.id)} title="削除" aria-label="削除">
             ✕

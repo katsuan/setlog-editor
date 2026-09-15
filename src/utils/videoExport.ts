@@ -13,7 +13,7 @@ function drawFrame(
   const h = canvas.height
   ctx.drawImage(video, 0, 0, w, h)
 
-  const timeText = formatTimecode(entry.time)
+  const timeText = entry.clockTime || formatTimecode(entry.time)
   const captionText = entry.caption
   const timeFontSize = Math.round(w * 0.09)
   const captionFontSize = Math.round(w * 0.06)

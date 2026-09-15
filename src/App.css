@@ -238,6 +238,23 @@ button:disabled {
   background: #2a2e37;
 }
 
+.log-clock-time {
+  width: 5.5rem;
+  flex: none;
+  background: #14161b;
+  border: 1px solid #2a2e37;
+  border-radius: 4px;
+  color: #e6e6e6;
+  font-size: 16px;
+  font-variant-numeric: tabular-nums;
+  padding: 0.5rem;
+  min-height: 2.5rem;
+}
+
+.log-clock-time:focus {
+  outline: 1px solid #1f6feb;
+}
+
 .log-caption {
   flex: 1;
   background: transparent;

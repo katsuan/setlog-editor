@@ -60,6 +60,7 @@ export default function App() {
     const entry: LogEntry = {
       id: crypto.randomUUID(),
       time: video.currentTime,
+      clockTime: '',
       caption: '',
     }
     setEntries((prev) => [...prev, entry])
@@ -91,6 +92,10 @@ export default function App() {
 
   const changeCaption = (id: string, caption: string) => {
     setEntries((prev) => prev.map((e) => (e.id === id ? { ...e, caption } : e)))
+  }
+
+  const changeClockTime = (id: string, clockTime: string) => {
+    setEntries((prev) => prev.map((e) => (e.id === id ? { ...e, clockTime } : e)))
   }
 
   const deleteEntry = (id: string) => {
@@ -171,7 +176,7 @@ export default function App() {
     try {
       const parsed = JSON.parse(text) as ProjectState
       if (Array.isArray(parsed.entries)) {
-        setEntries(parsed.entries)
+        setEntries(parsed.entries.map((e) => ({ ...e, clockTime: e.clockTime ?? '' })))
       }
     } catch {
       alert('JSONの読み込みに失敗しました')
@@ -249,6 +254,7 @@ export default function App() {
             activeId={activeId}
             onSeek={seekTo}
             onPreview={previewCut}
+            onChangeClockTime={changeClockTime}
             onChangeCaption={changeCaption}
             onDelete={deleteEntry}
           />
