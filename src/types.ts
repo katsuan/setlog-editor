@@ -6,5 +6,6 @@ export interface LogEntry {
 
 export interface ProjectState {
   videoName: string
+  title: string
   entries: LogEntry[]
 }

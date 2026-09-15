@@ -4,29 +4,33 @@ import LogList from './components/LogList'
 import type { LogEntry, ProjectState } from './types'
 import { formatTimecode } from './utils/time'
 import { exportCsv, exportJson, exportSrt } from './utils/export'
+import { renderOverlayVideo } from './utils/videoExport'
 import './App.css'
 
 function storageKey(videoName: string) {
   return `setlog-editor:${videoName}`
 }
 
-function loadFromStorage(videoName: string): LogEntry[] {
+function loadFromStorage(videoName: string): { entries: LogEntry[]; title: string } {
   try {
     const raw = localStorage.getItem(storageKey(videoName))
-    if (!raw) return []
+    if (!raw) return { entries: [], title: '' }
     const parsed = JSON.parse(raw) as ProjectState
-    return parsed.entries ?? []
+    return { entries: parsed.entries ?? [], title: parsed.title ?? '' }
   } catch {
-    return []
+    return { entries: [], title: '' }
   }
 }
 
 export default function App() {
   const [videoUrl, setVideoUrl] = useState<string | null>(null)
   const [videoName, setVideoName] = useState<string>('')
+  const [title, setTitle] = useState<string>('')
   const [entries, setEntries] = useState<LogEntry[]>([])
   const [currentTime, setCurrentTime] = useState(0)
   const [activeId, setActiveId] = useState<string | null>(null)
+  const [isExporting, setIsExporting] = useState(false)
+  const [exportProgress, setExportProgress] = useState(0)
   const videoRef = useRef<HTMLVideoElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const importInputRef = useRef<HTMLInputElement>(null)
@@ -35,7 +39,9 @@ export default function App() {
     const url = URL.createObjectURL(file)
     setVideoUrl(url)
     setVideoName(file.name)
-    setEntries(loadFromStorage(file.name))
+    const loaded = loadFromStorage(file.name)
+    setEntries(loaded.entries)
+    setTitle(loaded.title)
     setActiveId(null)
   }, [])
 
@@ -80,9 +86,31 @@ export default function App() {
   // autosave
   useEffect(() => {
     if (!videoName) return
-    const project: ProjectState = { videoName, entries }
+    const project: ProjectState = { videoName, title, entries }
     localStorage.setItem(storageKey(videoName), JSON.stringify(project))
-  }, [videoName, entries])
+  }, [videoName, title, entries])
+
+  const exportOverlayVideo = useCallback(async () => {
+    const video = videoRef.current
+    if (!video) return
+    setIsExporting(true)
+    setExportProgress(0)
+    try {
+      const blob = await renderOverlayVideo(video, entries, title, {
+        onProgress: setExportProgress,
+      })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `${videoName ? videoName.replace(/\.[^.]+$/, '') : 'setlog'}.webm`
+      a.click()
+      URL.revokeObjectURL(url)
+    } catch (err) {
+      alert(`動画の書き出しに失敗しました: ${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setIsExporting(false)
+    }
+  }, [entries, title, videoName])
 
   // keyboard shortcuts
   useEffect(() => {
@@ -116,6 +144,9 @@ export default function App() {
       const parsed = JSON.parse(text) as ProjectState
       if (Array.isArray(parsed.entries)) {
         setEntries(parsed.entries)
+      }
+      if (typeof parsed.title === 'string') {
+        setTitle(parsed.title)
       }
     } catch {
       alert('JSONの読み込みに失敗しました')
@@ -152,13 +183,31 @@ export default function App() {
             />
             {videoName && <span className="video-name">{videoName}</span>}
           </div>
+          {videoUrl && (
+            <div className="export-section">
+              <input
+                className="title-input"
+                type="text"
+                placeholder="タイトル帯のテキスト（例: 沖縄1日目 setlog🎥🎀）"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+              />
+              <button
+                className="export-button"
+                onClick={exportOverlayVideo}
+                disabled={isExporting || !entries.length}
+              >
+                {isExporting ? `書き出し中… ${Math.round(exportProgress * 100)}%` : '動画を書き出す (WebM)'}
+              </button>
+            </div>
+          )}
         </section>
 
         <section className="log-section">
           <div className="log-header">
             <h2>ログ ({entries.length})</h2>
             <div className="log-actions">
-              <button onClick={() => exportJson({ videoName, entries })} disabled={!entries.length}>
+              <button onClick={() => exportJson({ videoName, title, entries })} disabled={!entries.length}>
                 JSON書き出し
               </button>
               <button onClick={() => exportSrt(entries, videoName)} disabled={!entries.length}>
