@@ -62,7 +62,7 @@ export async function renderOverlayVideo(
   options: ExportOptions = {},
 ): Promise<Blob> {
   const sorted = [...entries].sort((a, b) => a.time - b.time)
-  if (!sorted.length) throw new Error('ログがありません')
+  if (!sorted.length) throw new Error('カットがありません')
 
   const canvas = document.createElement('canvas')
   canvas.width = video.videoWidth

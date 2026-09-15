@@ -228,7 +228,7 @@ export default function App() {
 
         <section className="log-section">
           <div className="log-header">
-            <h2>ログ ({entries.length})</h2>
+            <h2>動画書き出し ({entries.length}カット)</h2>
             <div className="log-actions">
               <button onClick={() => exportJson({ videoName, entries })} disabled={!entries.length}>
                 JSON書き出し

@@ -23,7 +23,7 @@ export default function LogList({
   const sorted = [...entries].sort((a, b) => a.time - b.time)
 
   if (sorted.length === 0) {
-    return <p className="log-empty">まだログがありません。再生中に「ここでマーク」を押してください。</p>
+    return <p className="log-empty">まだカットがありません。再生中に「ここでマーク」を押してください。</p>
   }
 
   return (
