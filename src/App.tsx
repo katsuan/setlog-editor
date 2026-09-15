@@ -1,11 +1,32 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import VideoPlayer from './components/VideoPlayer'
 import LogList from './components/LogList'
 import type { LogEntry, ProjectState } from './types'
 import { formatTimecode } from './utils/time'
 import { exportCsv, exportJson, exportSrt } from './utils/export'
-import { CUT_DURATION, renderOverlayVideo } from './utils/videoExport'
+import { CUT_DURATION, combineClips, renderOverlayVideo } from './utils/videoExport'
 import './App.css'
+
+async function saveOrShareBlob(blob: Blob, filename: string) {
+  const file = new File([blob], filename, { type: blob.type })
+
+  if (navigator.canShare?.({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: filename })
+      return
+    } catch (shareErr) {
+      if (shareErr instanceof Error && shareErr.name === 'AbortError') return
+      // fall through to download if share failed for another reason
+    }
+  }
+
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  a.click()
+  URL.revokeObjectURL(url)
+}
 
 function storageKey(videoName: string) {
   return `setlog-editor:${videoName}`
@@ -28,8 +49,11 @@ export default function App() {
   const [entries, setEntries] = useState<LogEntry[]>([])
   const [currentTime, setCurrentTime] = useState(0)
   const [activeId, setActiveId] = useState<string | null>(null)
-  const [isExporting, setIsExporting] = useState(false)
-  const [exportProgress, setExportProgress] = useState(0)
+  const [activeTab, setActiveTab] = useState<'cut' | 'combine'>('cut')
+  const [clipBlobs, setClipBlobs] = useState<Record<string, Blob>>({})
+  const [exportingEntryId, setExportingEntryId] = useState<string | null>(null)
+  const [isCombining, setIsCombining] = useState(false)
+  const [combineProgress, setCombineProgress] = useState(0)
   const videoRef = useRef<HTMLVideoElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const importInputRef = useRef<HTMLInputElement>(null)
@@ -40,6 +64,7 @@ export default function App() {
     setVideoName(file.name)
     setEntries(loadFromStorage(file.name))
     setActiveId(null)
+    setClipBlobs({})
   }, [])
 
   const onFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -109,41 +134,41 @@ export default function App() {
     localStorage.setItem(storageKey(videoName), JSON.stringify(project))
   }, [videoName, entries])
 
-  const exportOverlayVideo = useCallback(async () => {
-    const video = videoRef.current
-    if (!video) return
-    setIsExporting(true)
-    setExportProgress(0)
+  const sortedEntries = useMemo(() => [...entries].sort((a, b) => a.time - b.time), [entries])
+
+  const exportEntryClip = useCallback(
+    async (entry: LogEntry) => {
+      const video = videoRef.current
+      if (!video) return
+      setExportingEntryId(entry.id)
+      try {
+        const blob = await renderOverlayVideo(video, [entry])
+        setClipBlobs((prev) => ({ ...prev, [entry.id]: blob }))
+      } catch (err) {
+        alert(`カットの書き出しに失敗しました: ${err instanceof Error ? err.message : String(err)}`)
+      } finally {
+        setExportingEntryId(null)
+      }
+    },
+    [],
+  )
+
+  const combineAndSave = useCallback(async () => {
+    const orderedBlobs = sortedEntries.map((e) => clipBlobs[e.id]).filter((b): b is Blob => !!b)
+    if (orderedBlobs.length !== sortedEntries.length) return
+    setIsCombining(true)
+    setCombineProgress(0)
     try {
-      const blob = await renderOverlayVideo(video, entries, {
-        onProgress: setExportProgress,
-      })
+      const blob = await combineClips(orderedBlobs, { onProgress: setCombineProgress })
       const ext = blob.type.includes('mp4') ? 'mp4' : 'webm'
       const filename = `${videoName ? videoName.replace(/\.[^.]+$/, '') : 'setlog'}.${ext}`
-      const file = new File([blob], filename, { type: blob.type })
-
-      if (navigator.canShare?.({ files: [file] })) {
-        try {
-          await navigator.share({ files: [file], title: filename })
-          return
-        } catch (shareErr) {
-          if (shareErr instanceof Error && shareErr.name === 'AbortError') return
-          // fall through to download if share failed for another reason
-        }
-      }
-
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = filename
-      a.click()
-      URL.revokeObjectURL(url)
+      await saveOrShareBlob(blob, filename)
     } catch (err) {
-      alert(`動画の書き出しに失敗しました: ${err instanceof Error ? err.message : String(err)}`)
+      alert(`結合に失敗しました: ${err instanceof Error ? err.message : String(err)}`)
     } finally {
-      setIsExporting(false)
+      setIsCombining(false)
     }
-  }, [entries, videoName])
+  }, [clipBlobs, sortedEntries, videoName])
 
   // keyboard shortcuts
   useEffect(() => {
@@ -213,22 +238,11 @@ export default function App() {
             />
             {videoName && <span className="video-name">{videoName}</span>}
           </div>
-          {videoUrl && (
-            <div className="export-section">
-              <button
-                className="export-button"
-                onClick={exportOverlayVideo}
-                disabled={isExporting || !entries.length}
-              >
-                {isExporting ? `書き出し中… ${Math.round(exportProgress * 100)}%` : '動画を書き出す・保存/共有 (1カット2秒)'}
-              </button>
-            </div>
-          )}
         </section>
 
         <section className="log-section">
           <div className="log-header">
-            <h2>動画書き出し ({entries.length}カット)</h2>
+            <h2>カット一覧 ({entries.length})</h2>
             <div className="log-actions">
               <button onClick={() => exportJson({ videoName, entries })} disabled={!entries.length}>
                 JSON書き出し
@@ -259,6 +273,71 @@ export default function App() {
             onDelete={deleteEntry}
           />
         </section>
+
+        {videoUrl && entries.length > 0 && (
+          <section className="export-section">
+            <div className="export-tabs">
+              <button
+                className={activeTab === 'cut' ? 'export-tab active' : 'export-tab'}
+                onClick={() => setActiveTab('cut')}
+              >
+                ① カット書き出し
+              </button>
+              <button
+                className={activeTab === 'combine' ? 'export-tab active' : 'export-tab'}
+                onClick={() => setActiveTab('combine')}
+              >
+                ② 結合
+              </button>
+            </div>
+
+            {activeTab === 'cut' && (
+              <ul className="clip-list">
+                {sortedEntries.map((entry) => (
+                  <li key={entry.id} className="clip-row">
+                    <span className="clip-label">
+                      {entry.clockTime || formatTimecode(entry.time)}
+                      {entry.caption ? ` ／ ${entry.caption}` : ''}
+                    </span>
+                    <button
+                      onClick={() => exportEntryClip(entry)}
+                      disabled={exportingEntryId === entry.id}
+                    >
+                      {exportingEntryId === entry.id
+                        ? '書き出し中…'
+                        : clipBlobs[entry.id]
+                          ? '再書き出し'
+                          : '書き出す'}
+                    </button>
+                    {clipBlobs[entry.id] && <span className="clip-done">✓ 済み</span>}
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {activeTab === 'combine' && (
+              <div className="combine-panel">
+                <p className="combine-status">
+                  {Object.keys(clipBlobs).filter((id) => sortedEntries.some((e) => e.id === id)).length}{' '}
+                  / {sortedEntries.length} カット書き出し済み
+                </p>
+                <button
+                  className="export-button"
+                  onClick={combineAndSave}
+                  disabled={
+                    isCombining ||
+                    sortedEntries.length === 0 ||
+                    sortedEntries.some((e) => !clipBlobs[e.id])
+                  }
+                >
+                  {isCombining
+                    ? `結合中… ${Math.round(combineProgress * 100)}%`
+                    : '結合して保存/共有'}
+                </button>
+              </div>
+            )}
+          </section>
+        )}
       </main>
 
       <footer className="app-footer">

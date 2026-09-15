@@ -50,6 +50,19 @@
     flex-basis: 100%;
     order: 3;
   }
+
+  .export-tabs button {
+    flex: 1;
+  }
+
+  .clip-row {
+    flex-wrap: wrap;
+  }
+
+  .clip-label {
+    flex-basis: 100%;
+    white-space: normal;
+  }
 }
 
 .player-section {
@@ -123,13 +136,76 @@
 }
 
 .export-section {
+  grid-column: 1 / -1;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.75rem;
   padding: 0.75rem;
   background: #1a1d24;
   border: 1px solid #2a2e37;
   border-radius: 8px;
+}
+
+.export-tabs {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.export-tab {
+  background: #23262e;
+  color: #9aa0a6;
+}
+
+.export-tab.active {
+  background: #1f6feb;
+  color: white;
+}
+
+.clip-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.clip-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  background: #14161b;
+  border: 1px solid #2a2e37;
+  border-radius: 6px;
+  padding: 0.5rem;
+}
+
+.clip-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.9rem;
+}
+
+.clip-done {
+  color: #2ea043;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}
+
+.combine-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.combine-status {
+  margin: 0;
+  color: #9aa0a6;
+  font-size: 0.9rem;
 }
 
 .export-button {

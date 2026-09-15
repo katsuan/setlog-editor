@@ -56,6 +56,23 @@ export interface ExportOptions {
   onProgress?: (ratio: number) => void
 }
 
+const MP4_THEN_WEBM = [
+  // MP4 first: widely accepted by SNS apps (Instagram/LINE/X) without conversion.
+  // WebM as fallback for browsers without MediaRecorder MP4 support.
+  'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+  'video/mp4;codecs=avc1,mp4a',
+  'video/mp4',
+  'video/webm;codecs=vp9,opus',
+  'video/webm;codecs=vp8,opus',
+  'video/webm',
+]
+
+function pickMimeType(): string {
+  const mimeType = MP4_THEN_WEBM.find((t) => MediaRecorder.isTypeSupported(t))
+  if (!mimeType) throw new Error('このブラウザは動画の書き出しに対応していません')
+  return mimeType
+}
+
 export async function renderOverlayVideo(
   video: HTMLVideoElement,
   entries: LogEntry[],
@@ -83,17 +100,7 @@ export async function renderOverlayVideo(
     ...(audioTrack ? [audioTrack] : []),
   ])
 
-  // MP4 first: widely accepted by SNS apps (Instagram/LINE/X) without conversion.
-  // WebM as fallback for browsers without MediaRecorder MP4 support.
-  const mimeType = [
-    'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
-    'video/mp4;codecs=avc1,mp4a',
-    'video/mp4',
-    'video/webm;codecs=vp9,opus',
-    'video/webm;codecs=vp8,opus',
-    'video/webm',
-  ].find((t) => MediaRecorder.isTypeSupported(t))
-  if (!mimeType) throw new Error('このブラウザは動画の書き出しに対応していません')
+  const mimeType = pickMimeType()
 
   const recorder = new MediaRecorder(combinedStream, { mimeType, videoBitsPerSecond: 8_000_000 })
   const chunks: Blob[] = []
@@ -149,6 +156,122 @@ export async function renderOverlayVideo(
     recorder.stop()
     video.muted = wasMuted
     video.currentTime = wasTime
+  }
+
+  return stopPromise
+}
+
+function loadClipMetadata(video: HTMLVideoElement): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const onLoaded = () => {
+      video.removeEventListener('loadedmetadata', onLoaded)
+      video.removeEventListener('error', onError)
+      resolve()
+    }
+    const onError = () => {
+      video.removeEventListener('loadedmetadata', onLoaded)
+      video.removeEventListener('error', onError)
+      reject(new Error('クリップの読み込みに失敗しました'))
+    }
+    video.addEventListener('loadedmetadata', onLoaded)
+    video.addEventListener('error', onError)
+  })
+}
+
+function waitForEnded(video: HTMLVideoElement): Promise<void> {
+  return new Promise((resolve) => {
+    const onEnded = () => {
+      video.removeEventListener('ended', onEnded)
+      resolve()
+    }
+    video.addEventListener('ended', onEnded)
+  })
+}
+
+/**
+ * Joins already-exported clips (each its own overlay-baked 2s video) into
+ * one final video, in the given order. Each clip is played through its own
+ * <video> element (audio routed via Web Audio into a single persistent
+ * destination track) while frames are drawn onto one shared canvas, so the
+ * whole sequence is captured as a single continuous MediaRecorder session.
+ */
+export async function combineClips(
+  clipBlobs: Blob[],
+  options: ExportOptions = {},
+): Promise<Blob> {
+  if (!clipBlobs.length) throw new Error('結合するクリップがありません')
+
+  const probe = document.createElement('video')
+  probe.muted = true
+  probe.src = URL.createObjectURL(clipBlobs[0])
+  await loadClipMetadata(probe)
+  const width = probe.videoWidth
+  const height = probe.videoHeight
+  URL.revokeObjectURL(probe.src)
+
+  const canvas = document.createElement('canvas')
+  canvas.width = width
+  canvas.height = height
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('Canvas 2D context を取得できませんでした')
+
+  const canvasStream = canvas.captureStream(30)
+  const audioCtx = new AudioContext()
+  const destination = audioCtx.createMediaStreamDestination()
+
+  const combinedStream = new MediaStream([
+    ...canvasStream.getVideoTracks(),
+    ...destination.stream.getAudioTracks(),
+  ])
+
+  const mimeType = pickMimeType()
+  const recorder = new MediaRecorder(combinedStream, { mimeType, videoBitsPerSecond: 8_000_000 })
+  const chunks: Blob[] = []
+  recorder.ondataavailable = (e) => {
+    if (e.data.size > 0) chunks.push(e.data)
+  }
+  const stopPromise = new Promise<Blob>((resolve, reject) => {
+    recorder.onstop = () => resolve(new Blob(chunks, { type: mimeType }))
+    recorder.onerror = (e) => reject(e)
+  })
+
+  const objectUrls: string[] = []
+  try {
+    for (let i = 0; i < clipBlobs.length; i++) {
+      const clipVideo = document.createElement('video')
+      clipVideo.muted = true // keep silent on speakers; audio still flows through the Web Audio graph below
+      clipVideo.playsInline = true
+      const url = URL.createObjectURL(clipBlobs[i])
+      objectUrls.push(url)
+      clipVideo.src = url
+      await loadClipMetadata(clipVideo)
+
+      const source = audioCtx.createMediaElementSource(clipVideo)
+      source.connect(destination)
+
+      // Paint the clip's first frame before playback so the recorder never
+      // captures a blank canvas between clips.
+      ctx.drawImage(clipVideo, 0, 0, width, height)
+      if (i === 0) recorder.start()
+
+      await clipVideo.play()
+      let stopped = false
+      const drawLoop = () => {
+        if (stopped) return
+        ctx.drawImage(clipVideo, 0, 0, width, height)
+        requestAnimationFrame(drawLoop)
+      }
+      requestAnimationFrame(drawLoop)
+
+      await waitForEnded(clipVideo)
+      stopped = true
+      source.disconnect()
+      options.onProgress?.((i + 1) / clipBlobs.length)
+    }
+  } finally {
+    recorder.stop()
+    objectUrls.forEach((url) => URL.revokeObjectURL(url))
+    await audioCtx.close()
   }
 
   return stopPromise
