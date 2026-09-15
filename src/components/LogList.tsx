@@ -28,6 +28,7 @@ export default function LogList({ entries, activeId, onSeek, onChangeCaption, on
             value={entry.caption}
             placeholder="キャプションを入力..."
             onChange={(e) => onChangeCaption(entry.id, e.target.value)}
+            autoFocus={entry.id === activeId}
           />
           <button className="log-delete" onClick={() => onDelete(entry.id)} title="削除" aria-label="削除">
             ✕

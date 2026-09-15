@@ -56,6 +56,7 @@ export default function App() {
   const markHere = useCallback(() => {
     const video = videoRef.current
     if (!video) return
+    video.pause()
     const entry: LogEntry = {
       id: crypto.randomUUID(),
       time: video.currentTime,
