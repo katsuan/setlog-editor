@@ -153,7 +153,7 @@ export default function App() {
     localStorage.setItem(storageKey(videoName), JSON.stringify(project))
   }, [videoName, entries, baseClockTime])
 
-  const sortedEntries = useMemo(() => [...entries].sort((a, b) => a.time - b.time), [entries])
+  const exportedIds = useMemo(() => new Set(exportedClips.map((c) => c.id)), [exportedClips])
 
   const exportEntryClip = useCallback(
     async (entry: LogEntry) => {
@@ -193,6 +193,11 @@ export default function App() {
     const ext = clip.blob.type.includes('mp4') ? 'mp4' : 'webm'
     const base = clip.caption || clip.clockTime || clip.videoName.replace(/\.[^.]+$/, '') || 'clip'
     saveOrShareBlob(clip.blob, `${base}.${ext}`)
+  }
+
+  const saveExportedClipById = (id: string) => {
+    const clip = exportedClips.find((c) => c.id === id)
+    if (clip) saveExportedClip(clip)
   }
 
   const onImportClips = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -359,7 +364,7 @@ export default function App() {
 
         <section className="log-section">
           <div className="log-header">
-            <h2>カット一覧 ({entries.length})</h2>
+            <h2>カット ({entries.length})</h2>
             <button className="link-toggle" onClick={() => setShowMoreExports((v) => !v)}>
               {showMoreExports ? '▾ その他の書き出しを閉じる' : '▸ その他の書き出し（JSON/SRT/CSV）'}
             </button>
@@ -393,6 +398,10 @@ export default function App() {
             onChangeClockTime={changeClockTime}
             onChangeCaption={changeCaption}
             onDelete={deleteEntry}
+            exportedIds={exportedIds}
+            exportingEntryId={exportingEntryId}
+            onExport={exportEntryClip}
+            onSaveExported={saveExportedClipById}
           />
         </section>
 
@@ -438,38 +447,6 @@ export default function App() {
             </>
           )}
         </section>
-
-        {videoUrl && entries.length > 0 && (
-          <section className="export-section">
-            <h2>カットを書き出す</h2>
-            <ul className="clip-list">
-              {sortedEntries.map((entry) => {
-                const done = exportedClips.some((c) => c.id === entry.id)
-                return (
-                  <li key={entry.id} className="clip-row">
-                    <span className="clip-label">
-                      {entry.clockTime || formatTimecode(entry.time)}
-                      {entry.caption ? ` ／ ${entry.caption}` : ''}
-                    </span>
-                    <button onClick={() => exportEntryClip(entry)} disabled={exportingEntryId === entry.id}>
-                      {exportingEntryId === entry.id ? '書き出し中…' : done ? '再書き出し' : '書き出す'}
-                    </button>
-                    {done && (
-                      <>
-                        <span className="clip-done">✓ 済み</span>
-                        <button
-                          onClick={() => saveExportedClip(exportedClips.find((c) => c.id === entry.id)!)}
-                        >
-                          保存
-                        </button>
-                      </>
-                    )}
-                  </li>
-                )
-              })}
-            </ul>
-          </section>
-        )}
 
         <section className="export-section">
           <h2>結合 ({exportedClips.length})</h2>
