@@ -4,7 +4,7 @@ import LogList from './components/LogList'
 import type { LogEntry, ProjectState } from './types'
 import { formatTimecode } from './utils/time'
 import { exportCsv, exportJson, exportSrt } from './utils/export'
-import { CUT_DURATION, combineClips, renderOverlayVideo } from './utils/videoExport'
+import { CUT_DURATION, combineClips, renderImageClip, renderOverlayVideo } from './utils/videoExport'
 import './App.css'
 
 async function saveOrShareBlob(blob: Blob, filename: string) {
@@ -62,9 +62,14 @@ export default function App() {
   const [exportingEntryId, setExportingEntryId] = useState<string | null>(null)
   const [isCombining, setIsCombining] = useState(false)
   const [combineProgress, setCombineProgress] = useState(0)
+  const [photoFile, setPhotoFile] = useState<File | null>(null)
+  const [photoClockTime, setPhotoClockTime] = useState('')
+  const [photoCaption, setPhotoCaption] = useState('')
+  const [isExportingPhoto, setIsExportingPhoto] = useState(false)
   const videoRef = useRef<HTMLVideoElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const importInputRef = useRef<HTMLInputElement>(null)
+  const photoInputRef = useRef<HTMLInputElement>(null)
 
   const handleVideoFile = useCallback((file: File) => {
     const url = URL.createObjectURL(file)
@@ -208,6 +213,39 @@ export default function App() {
     }
   }, [exportedClips])
 
+  const onPhotoInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (file) {
+      setPhotoFile(file)
+      setPhotoClockTime('')
+      setPhotoCaption('')
+    }
+    e.target.value = ''
+  }
+
+  const exportPhotoClip = useCallback(async () => {
+    if (!photoFile) return
+    setIsExportingPhoto(true)
+    try {
+      const blob = await renderImageClip(photoFile, photoClockTime, photoCaption)
+      const record: ExportedClip = {
+        id: crypto.randomUUID(),
+        videoName: photoFile.name,
+        clockTime: photoClockTime,
+        caption: photoCaption,
+        blob,
+      }
+      setExportedClips((prev) => [...prev, record])
+      setPhotoFile(null)
+      setPhotoClockTime('')
+      setPhotoCaption('')
+    } catch (err) {
+      alert(`写真の書き出しに失敗しました: ${err instanceof Error ? err.message : String(err)}`)
+    } finally {
+      setIsExportingPhoto(false)
+    }
+  }, [photoFile, photoClockTime, photoCaption])
+
   // keyboard shortcuts
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
@@ -310,6 +348,43 @@ export default function App() {
             onChangeCaption={changeCaption}
             onDelete={deleteEntry}
           />
+        </section>
+
+        <section className="photo-section">
+          <h2>写真を追加</h2>
+          <p className="combine-status">
+            写真を {CUT_DURATION} 秒間の静止画クリップにして、結合リストに追加できます。
+          </p>
+          <div className="file-controls">
+            <button onClick={() => photoInputRef.current?.click()}>写真を選ぶ</button>
+            <input
+              ref={photoInputRef}
+              type="file"
+              accept="image/*"
+              hidden
+              onChange={onPhotoInputChange}
+            />
+            {photoFile && <span className="video-name">{photoFile.name}</span>}
+          </div>
+          {photoFile && (
+            <div className="clip-row">
+              <input
+                className="log-clock-time"
+                value={photoClockTime}
+                placeholder="撮影時刻 例: 11:00"
+                onChange={(e) => setPhotoClockTime(e.target.value)}
+              />
+              <input
+                className="log-caption"
+                value={photoCaption}
+                placeholder="キャプションを入力..."
+                onChange={(e) => setPhotoCaption(e.target.value)}
+              />
+              <button onClick={exportPhotoClip} disabled={isExportingPhoto}>
+                {isExportingPhoto ? '書き出し中…' : `${CUT_DURATION}秒クリップとして書き出す`}
+              </button>
+            </div>
+          )}
         </section>
 
         {(exportedClips.length > 0 || (videoUrl && entries.length > 0)) && (

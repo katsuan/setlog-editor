@@ -3,18 +3,13 @@ import { formatTimecode } from './time'
 
 export const CUT_DURATION = 2 // seconds per log entry
 
-function drawFrame(
+function drawOverlayText(
   ctx: CanvasRenderingContext2D,
-  video: HTMLVideoElement,
-  canvas: HTMLCanvasElement,
-  entry: LogEntry,
+  w: number,
+  h: number,
+  timeText: string,
+  captionText: string,
 ) {
-  const w = canvas.width
-  const h = canvas.height
-  ctx.drawImage(video, 0, 0, w, h)
-
-  const timeText = entry.clockTime || formatTimecode(entry.time)
-  const captionText = entry.caption
   const timeFontSize = Math.round(w * 0.09)
   const captionFontSize = Math.round(w * 0.06)
   const lineGap = Math.round(timeFontSize * 0.9)
@@ -39,6 +34,18 @@ function drawFrame(
     ctx.fillText(captionText, w / 2, captionY, w * 0.9)
   }
   ctx.shadowBlur = 0
+}
+
+function drawFrame(
+  ctx: CanvasRenderingContext2D,
+  video: HTMLVideoElement,
+  canvas: HTMLCanvasElement,
+  entry: LogEntry,
+) {
+  const w = canvas.width
+  const h = canvas.height
+  ctx.drawImage(video, 0, 0, w, h)
+  drawOverlayText(ctx, w, h, entry.clockTime || formatTimecode(entry.time), entry.caption)
 }
 
 function seekTo(video: HTMLVideoElement, time: number): Promise<void> {
@@ -186,6 +193,75 @@ function waitForEnded(video: HTMLVideoElement): Promise<void> {
     }
     video.addEventListener('ended', onEnded)
   })
+}
+
+function loadImage(blob: Blob): Promise<HTMLImageElement> {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => resolve(img)
+    img.onerror = () => reject(new Error('画像の読み込みに失敗しました'))
+    img.src = URL.createObjectURL(blob)
+  })
+}
+
+/**
+ * Turns a still photo into a CUT_DURATION-second video clip with the same
+ * time+caption overlay used for video cuts, so photos can be mixed into the
+ * combine list alongside clips exported from video.
+ */
+export async function renderImageClip(
+  imageBlob: Blob,
+  clockTime: string,
+  caption: string,
+  options: ExportOptions = {},
+): Promise<Blob> {
+  const img = await loadImage(imageBlob)
+
+  const canvas = document.createElement('canvas')
+  canvas.width = img.naturalWidth
+  canvas.height = img.naturalHeight
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('Canvas 2D context を取得できませんでした')
+
+  const draw = () => {
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
+    drawOverlayText(ctx, canvas.width, canvas.height, clockTime, caption)
+  }
+
+  const canvasStream = canvas.captureStream(30)
+  const mimeType = pickMimeType()
+  const recorder = new MediaRecorder(canvasStream, { mimeType, videoBitsPerSecond: 8_000_000 })
+  const chunks: Blob[] = []
+  recorder.ondataavailable = (e) => {
+    if (e.data.size > 0) chunks.push(e.data)
+  }
+  const stopPromise = new Promise<Blob>((resolve, reject) => {
+    recorder.onstop = () => resolve(new Blob(chunks, { type: mimeType }))
+    recorder.onerror = (e) => reject(e)
+  })
+
+  // Paint before starting the recorder to avoid capturing a blank frame.
+  draw()
+  recorder.start()
+
+  const start = performance.now()
+  await new Promise<void>((resolve) => {
+    const tick = () => {
+      draw()
+      if ((performance.now() - start) / 1000 >= CUT_DURATION) {
+        resolve()
+        return
+      }
+      requestAnimationFrame(tick)
+    }
+    requestAnimationFrame(tick)
+  })
+
+  recorder.stop()
+  URL.revokeObjectURL(img.src)
+  options.onProgress?.(1)
+
+  return stopPromise
 }
 
 /**
