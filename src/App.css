@@ -342,7 +342,7 @@ button:disabled {
 }
 
 .log-clock-time {
-  width: 5.5rem;
+  width: 6rem;
   flex: none;
   background: var(--card);
   border: 1px solid var(--border);
@@ -352,6 +352,7 @@ button:disabled {
   font-variant-numeric: tabular-nums;
   padding: 0.5rem;
   min-height: 2.5rem;
+  cursor: pointer;
 }
 
 .log-clock-time:focus {

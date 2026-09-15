@@ -1,5 +1,6 @@
 import type { LogEntry } from '../types'
 import { formatTimecode } from '../utils/time'
+import TimeSelect from './TimeSelect'
 
 interface Props {
   entries: LogEntry[]
@@ -50,11 +51,10 @@ export default function LogList({
             >
               ▶︎ プレビュー
             </button>
-            <input
+            <TimeSelect
               className="log-clock-time"
               value={entry.clockTime}
-              placeholder="撮影時刻 例: 11:00"
-              onChange={(e) => onChangeClockTime(entry.id, e.target.value)}
+              onChange={(v) => onChangeClockTime(entry.id, v)}
               autoFocus={entry.id === activeId}
             />
             <input

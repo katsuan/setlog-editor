@@ -10,7 +10,7 @@ function drawOverlayText(
   timeText: string,
   captionText: string,
 ) {
-  const timeFontSize = Math.round(w * 0.09)
+  const timeFontSize = Math.round(w * 0.065)
   const captionFontSize = Math.round(w * 0.06)
   const lineGap = Math.round(timeFontSize * 0.9)
 

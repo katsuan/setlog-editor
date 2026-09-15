@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import VideoPlayer from './components/VideoPlayer'
 import LogList from './components/LogList'
 import type { LogEntry, ProjectState } from './types'
-import { addMinutesToClock, formatTimecode } from './utils/time'
+import { addMinutesToClock, formatTimecode, roundToHalfHour } from './utils/time'
+import TimeSelect from './components/TimeSelect'
 import { exportCsv, exportJson, exportSrt } from './utils/export'
 import { CUT_DURATION, combineClips, renderImageClip, renderOverlayVideo } from './utils/videoExport'
 import './App.css'
@@ -104,7 +105,9 @@ export default function App() {
     const entry: LogEntry = {
       id: crypto.randomUUID(),
       time: video.currentTime,
-      clockTime: baseClockTime ? addMinutesToClock(baseClockTime, video.currentTime / 60) : '',
+      clockTime: baseClockTime
+        ? roundToHalfHour(addMinutesToClock(baseClockTime, video.currentTime / 60))
+        : '',
       caption: '',
     }
     setEntries((prev) => [...prev, entry])
@@ -350,12 +353,11 @@ export default function App() {
           {videoUrl && (
             <div className="base-clock-row">
               <label htmlFor="base-clock-time">動画の開始時刻</label>
-              <input
+              <TimeSelect
                 id="base-clock-time"
                 className="log-clock-time"
                 value={baseClockTime}
-                placeholder="例: 07:00"
-                onChange={(e) => setBaseClockTime(e.target.value)}
+                onChange={setBaseClockTime}
               />
               <span className="base-clock-hint">設定するとマーク時に撮影時刻を自動計算します</span>
             </div>
@@ -427,11 +429,10 @@ export default function App() {
               </div>
               {photoFile && (
                 <div className="clip-row">
-                  <input
+                  <TimeSelect
                     className="log-clock-time"
                     value={photoClockTime}
-                    placeholder="撮影時刻 例: 11:00"
-                    onChange={(e) => setPhotoClockTime(e.target.value)}
+                    onChange={setPhotoClockTime}
                   />
                   <input
                     className="log-caption"
