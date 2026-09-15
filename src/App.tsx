@@ -70,6 +70,7 @@ export default function App() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const importInputRef = useRef<HTMLInputElement>(null)
   const photoInputRef = useRef<HTMLInputElement>(null)
+  const clipImportInputRef = useRef<HTMLInputElement>(null)
 
   const handleVideoFile = useCallback((file: File) => {
     const url = URL.createObjectURL(file)
@@ -182,6 +183,29 @@ export default function App() {
 
   const removeExportedClip = (id: string) => {
     setExportedClips((prev) => prev.filter((c) => c.id !== id))
+  }
+
+  const saveExportedClip = (clip: ExportedClip) => {
+    const ext = clip.blob.type.includes('mp4') ? 'mp4' : 'webm'
+    const base = clip.caption || clip.clockTime || clip.videoName.replace(/\.[^.]+$/, '') || 'clip'
+    saveOrShareBlob(clip.blob, `${base}.${ext}`)
+  }
+
+  const onImportClips = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? [])
+    if (files.length) {
+      setExportedClips((prev) => [
+        ...prev,
+        ...files.map((file) => ({
+          id: crypto.randomUUID(),
+          videoName: file.name,
+          clockTime: '',
+          caption: '',
+          blob: file,
+        })),
+      ])
+    }
+    e.target.value = ''
   }
 
   const moveExportedClip = (index: number, direction: -1 | 1) => {
@@ -387,8 +411,7 @@ export default function App() {
           )}
         </section>
 
-        {(exportedClips.length > 0 || (videoUrl && entries.length > 0)) && (
-          <section className="export-section">
+        <section className="export-section">
             <div className="export-tabs">
               <button
                 className={activeTab === 'cut' ? 'export-tab active' : 'export-tab'}
@@ -426,7 +449,18 @@ export default function App() {
                                 ? '再書き出し'
                                 : '書き出す'}
                           </button>
-                          {done && <span className="clip-done">✓ 済み</span>}
+                          {done && (
+                            <>
+                              <span className="clip-done">✓ 済み</span>
+                              <button
+                                onClick={() =>
+                                  saveExportedClip(exportedClips.find((c) => c.id === entry.id)!)
+                                }
+                              >
+                                保存
+                              </button>
+                            </>
+                          )}
                         </li>
                       )
                     })}
@@ -442,8 +476,21 @@ export default function App() {
             {activeTab === 'combine' && (
               <div className="combine-panel">
                 <p className="combine-status">
-                  複数の動画ファイルから書き出したカットをまとめて1本に結合できます。
+                  複数の動画ファイルから書き出したカットをまとめて1本に結合できます。以前に保存したクリップファイルを読み込んで追加することもできます。
                 </p>
+                <div className="file-controls">
+                  <button onClick={() => clipImportInputRef.current?.click()}>
+                    クリップを読み込む（保存済みファイルから追加）
+                  </button>
+                  <input
+                    ref={clipImportInputRef}
+                    type="file"
+                    accept="video/*"
+                    multiple
+                    hidden
+                    onChange={onImportClips}
+                  />
+                </div>
                 {exportedClips.length === 0 ? (
                   <p className="combine-status">
                     まだ書き出したカットがありません。「①カット書き出し」で書き出してください。
@@ -496,7 +543,6 @@ export default function App() {
               </div>
             )}
           </section>
-        )}
       </main>
 
       <footer className="app-footer">

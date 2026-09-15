@@ -293,6 +293,7 @@ export async function combineClips(
 
   const canvasStream = canvas.captureStream(30)
   const audioCtx = new AudioContext()
+  await audioCtx.resume()
   const destination = audioCtx.createMediaStreamDestination()
 
   const combinedStream = new MediaStream([
@@ -308,29 +309,46 @@ export async function combineClips(
   }
   const stopPromise = new Promise<Blob>((resolve, reject) => {
     recorder.onstop = () => resolve(new Blob(chunks, { type: mimeType }))
-    recorder.onerror = (e) => reject(e)
+    recorder.onerror = (e) => {
+      const message = e instanceof ErrorEvent ? e.message : 'MediaRecorder でエラーが発生しました'
+      reject(new Error(message))
+    }
   })
 
   const objectUrls: string[] = []
   try {
     for (let i = 0; i < clipBlobs.length; i++) {
-      const clipVideo = document.createElement('video')
-      clipVideo.muted = true // keep silent on speakers; audio still flows through the Web Audio graph below
-      clipVideo.playsInline = true
-      const url = URL.createObjectURL(clipBlobs[i])
-      objectUrls.push(url)
-      clipVideo.src = url
-      await loadClipMetadata(clipVideo)
+      let clipVideo: HTMLVideoElement
+      try {
+        clipVideo = document.createElement('video')
+        clipVideo.muted = true // keep silent on speakers; audio still flows through the Web Audio graph below
+        clipVideo.playsInline = true
+        const url = URL.createObjectURL(clipBlobs[i])
+        objectUrls.push(url)
+        clipVideo.src = url
+        await loadClipMetadata(clipVideo)
+      } catch (err) {
+        throw new Error(
+          `${i + 1}番目のクリップの読み込みに失敗しました: ${err instanceof Error ? err.message : String(err)}`,
+        )
+      }
 
-      const source = audioCtx.createMediaElementSource(clipVideo)
-      source.connect(destination)
+      let source: MediaElementAudioSourceNode
+      try {
+        source = audioCtx.createMediaElementSource(clipVideo)
+        source.connect(destination)
 
-      // Paint the clip's first frame before playback so the recorder never
-      // captures a blank canvas between clips.
-      ctx.drawImage(clipVideo, 0, 0, width, height)
-      if (i === 0) recorder.start()
+        // Paint the clip's first frame before playback so the recorder never
+        // captures a blank canvas between clips.
+        ctx.drawImage(clipVideo, 0, 0, width, height)
+        if (i === 0) recorder.start()
 
-      await clipVideo.play()
+        await clipVideo.play()
+      } catch (err) {
+        throw new Error(
+          `${i + 1}番目のクリップの再生に失敗しました: ${err instanceof Error ? err.message : String(err)}`,
+        )
+      }
       let stopped = false
       const drawLoop = () => {
         if (stopped) return
