@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import VideoPlayer from './components/VideoPlayer'
 import LogList from './components/LogList'
 import type { LogEntry, ProjectState } from './types'
-import { formatTimecode } from './utils/time'
+import { addMinutesToClock, formatTimecode } from './utils/time'
 import { exportCsv, exportJson, exportSrt } from './utils/export'
 import { CUT_DURATION, combineClips, renderImageClip, renderOverlayVideo } from './utils/videoExport'
 import './App.css'
@@ -32,14 +32,14 @@ function storageKey(videoName: string) {
   return `setlog-editor:${videoName}`
 }
 
-function loadFromStorage(videoName: string): LogEntry[] {
+function loadFromStorage(videoName: string): { entries: LogEntry[]; baseClockTime: string } {
   try {
     const raw = localStorage.getItem(storageKey(videoName))
-    if (!raw) return []
+    if (!raw) return { entries: [], baseClockTime: '' }
     const parsed = JSON.parse(raw) as ProjectState
-    return parsed.entries ?? []
+    return { entries: parsed.entries ?? [], baseClockTime: parsed.baseClockTime ?? '' }
   } catch {
-    return []
+    return { entries: [], baseClockTime: '' }
   }
 }
 
@@ -57,7 +57,9 @@ export default function App() {
   const [entries, setEntries] = useState<LogEntry[]>([])
   const [currentTime, setCurrentTime] = useState(0)
   const [activeId, setActiveId] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'cut' | 'combine'>('cut')
+  const [baseClockTime, setBaseClockTime] = useState('')
+  const [showMoreExports, setShowMoreExports] = useState(false)
+  const [showPhotoSection, setShowPhotoSection] = useState(false)
   const [exportedClips, setExportedClips] = useState<ExportedClip[]>([])
   const [exportingEntryId, setExportingEntryId] = useState<string | null>(null)
   const [isCombining, setIsCombining] = useState(false)
@@ -76,7 +78,9 @@ export default function App() {
     const url = URL.createObjectURL(file)
     setVideoUrl(url)
     setVideoName(file.name)
-    setEntries(loadFromStorage(file.name))
+    const loaded = loadFromStorage(file.name)
+    setEntries(loaded.entries)
+    setBaseClockTime(loaded.baseClockTime)
     setActiveId(null)
     // exportedClips intentionally persists across video switches — combining
     // is meant to span cuts taken from multiple different source videos.
@@ -100,12 +104,12 @@ export default function App() {
     const entry: LogEntry = {
       id: crypto.randomUUID(),
       time: video.currentTime,
-      clockTime: '',
+      clockTime: baseClockTime ? addMinutesToClock(baseClockTime, video.currentTime / 60) : '',
       caption: '',
     }
     setEntries((prev) => [...prev, entry])
     setActiveId(entry.id)
-  }, [])
+  }, [baseClockTime])
 
   const seekTo = (time: number) => {
     const video = videoRef.current
@@ -145,9 +149,9 @@ export default function App() {
   // autosave
   useEffect(() => {
     if (!videoName) return
-    const project: ProjectState = { videoName, entries }
+    const project: ProjectState = { videoName, entries, baseClockTime }
     localStorage.setItem(storageKey(videoName), JSON.stringify(project))
-  }, [videoName, entries])
+  }, [videoName, entries, baseClockTime])
 
   const sortedEntries = useMemo(() => [...entries].sort((a, b) => a.time - b.time), [entries])
 
@@ -338,30 +342,48 @@ export default function App() {
             />
             {videoName && <span className="video-name">{videoName}</span>}
           </div>
+          {videoUrl && (
+            <div className="base-clock-row">
+              <label htmlFor="base-clock-time">動画の開始時刻</label>
+              <input
+                id="base-clock-time"
+                className="log-clock-time"
+                value={baseClockTime}
+                placeholder="例: 07:00"
+                onChange={(e) => setBaseClockTime(e.target.value)}
+              />
+              <span className="base-clock-hint">設定するとマーク時に撮影時刻を自動計算します</span>
+            </div>
+          )}
         </section>
 
         <section className="log-section">
           <div className="log-header">
             <h2>カット一覧 ({entries.length})</h2>
-            <div className="log-actions">
-              <button onClick={() => exportJson({ videoName, entries })} disabled={!entries.length}>
-                JSON書き出し
-              </button>
-              <button onClick={() => exportSrt(entries, videoName)} disabled={!entries.length}>
-                SRT書き出し
-              </button>
-              <button onClick={() => exportCsv(entries, videoName)} disabled={!entries.length}>
-                CSV書き出し
-              </button>
-              <button onClick={() => importInputRef.current?.click()}>JSON読み込み</button>
-              <input
-                ref={importInputRef}
-                type="file"
-                accept="application/json"
-                hidden
-                onChange={onImportJson}
-              />
-            </div>
+            <button className="link-toggle" onClick={() => setShowMoreExports((v) => !v)}>
+              {showMoreExports ? '▾ その他の書き出しを閉じる' : '▸ その他の書き出し（JSON/SRT/CSV）'}
+            </button>
+            {showMoreExports && (
+              <div className="log-actions">
+                <button onClick={() => exportJson({ videoName, entries })} disabled={!entries.length}>
+                  JSON書き出し
+                </button>
+                <button onClick={() => exportSrt(entries, videoName)} disabled={!entries.length}>
+                  SRT書き出し
+                </button>
+                <button onClick={() => exportCsv(entries, videoName)} disabled={!entries.length}>
+                  CSV書き出し
+                </button>
+                <button onClick={() => importInputRef.current?.click()}>JSON読み込み</button>
+                <input
+                  ref={importInputRef}
+                  type="file"
+                  accept="application/json"
+                  hidden
+                  onChange={onImportJson}
+                />
+              </div>
+            )}
           </div>
           <LogList
             entries={entries}
@@ -375,174 +397,144 @@ export default function App() {
         </section>
 
         <section className="photo-section">
-          <h2>写真を追加</h2>
-          <p className="combine-status">
-            写真を {CUT_DURATION} 秒間の静止画クリップにして、結合リストに追加できます。
-          </p>
-          <div className="file-controls">
-            <button onClick={() => photoInputRef.current?.click()}>写真を選ぶ</button>
-            <input
-              ref={photoInputRef}
-              type="file"
-              accept="image/*"
-              hidden
-              onChange={onPhotoInputChange}
-            />
-            {photoFile && <span className="video-name">{photoFile.name}</span>}
-          </div>
-          {photoFile && (
-            <div className="clip-row">
-              <input
-                className="log-clock-time"
-                value={photoClockTime}
-                placeholder="撮影時刻 例: 11:00"
-                onChange={(e) => setPhotoClockTime(e.target.value)}
-              />
-              <input
-                className="log-caption"
-                value={photoCaption}
-                placeholder="キャプションを入力..."
-                onChange={(e) => setPhotoCaption(e.target.value)}
-              />
-              <button onClick={exportPhotoClip} disabled={isExportingPhoto}>
-                {isExportingPhoto ? '書き出し中…' : `${CUT_DURATION}秒クリップとして書き出す`}
-              </button>
-            </div>
+          <button className="link-toggle" onClick={() => setShowPhotoSection((v) => !v)}>
+            {showPhotoSection ? '▾ 写真を追加を閉じる' : '▸ ＋ 写真を追加'}
+          </button>
+          {showPhotoSection && (
+            <>
+              <p className="combine-status">
+                写真を {CUT_DURATION} 秒間の静止画クリップにして、結合リストに追加できます。
+              </p>
+              <div className="file-controls">
+                <button onClick={() => photoInputRef.current?.click()}>写真を選ぶ</button>
+                <input
+                  ref={photoInputRef}
+                  type="file"
+                  accept="image/*"
+                  hidden
+                  onChange={onPhotoInputChange}
+                />
+                {photoFile && <span className="video-name">{photoFile.name}</span>}
+              </div>
+              {photoFile && (
+                <div className="clip-row">
+                  <input
+                    className="log-clock-time"
+                    value={photoClockTime}
+                    placeholder="撮影時刻 例: 11:00"
+                    onChange={(e) => setPhotoClockTime(e.target.value)}
+                  />
+                  <input
+                    className="log-caption"
+                    value={photoCaption}
+                    placeholder="キャプションを入力..."
+                    onChange={(e) => setPhotoCaption(e.target.value)}
+                  />
+                  <button onClick={exportPhotoClip} disabled={isExportingPhoto}>
+                    {isExportingPhoto ? '書き出し中…' : `${CUT_DURATION}秒クリップとして書き出す`}
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </section>
 
-        <section className="export-section">
-            <div className="export-tabs">
-              <button
-                className={activeTab === 'cut' ? 'export-tab active' : 'export-tab'}
-                onClick={() => setActiveTab('cut')}
-              >
-                ① カット書き出し
-              </button>
-              <button
-                className={activeTab === 'combine' ? 'export-tab active' : 'export-tab'}
-                onClick={() => setActiveTab('combine')}
-              >
-                ② 結合 ({exportedClips.length})
-              </button>
-            </div>
-
-            {activeTab === 'cut' && (
-              <>
-                {videoUrl && entries.length > 0 ? (
-                  <ul className="clip-list">
-                    {sortedEntries.map((entry) => {
-                      const done = exportedClips.some((c) => c.id === entry.id)
-                      return (
-                        <li key={entry.id} className="clip-row">
-                          <span className="clip-label">
-                            {entry.clockTime || formatTimecode(entry.time)}
-                            {entry.caption ? ` ／ ${entry.caption}` : ''}
-                          </span>
-                          <button
-                            onClick={() => exportEntryClip(entry)}
-                            disabled={exportingEntryId === entry.id}
-                          >
-                            {exportingEntryId === entry.id
-                              ? '書き出し中…'
-                              : done
-                                ? '再書き出し'
-                                : '書き出す'}
-                          </button>
-                          {done && (
-                            <>
-                              <span className="clip-done">✓ 済み</span>
-                              <button
-                                onClick={() =>
-                                  saveExportedClip(exportedClips.find((c) => c.id === entry.id)!)
-                                }
-                              >
-                                保存
-                              </button>
-                            </>
-                          )}
-                        </li>
-                      )
-                    })}
-                  </ul>
-                ) : (
-                  <p className="combine-status">
-                    動画を開いてカットをマークすると、ここに書き出しリストが表示されます。
-                  </p>
-                )}
-              </>
-            )}
-
-            {activeTab === 'combine' && (
-              <div className="combine-panel">
-                <p className="combine-status">
-                  複数の動画ファイルから書き出したカットをまとめて1本に結合できます。以前に保存したクリップファイルを読み込んで追加することもできます。
-                </p>
-                <div className="file-controls">
-                  <button onClick={() => clipImportInputRef.current?.click()}>
-                    クリップを読み込む（保存済みファイルから追加）
-                  </button>
-                  <input
-                    ref={clipImportInputRef}
-                    type="file"
-                    accept="video/*"
-                    multiple
-                    hidden
-                    onChange={onImportClips}
-                  />
-                </div>
-                {exportedClips.length === 0 ? (
-                  <p className="combine-status">
-                    まだ書き出したカットがありません。「①カット書き出し」で書き出してください。
-                  </p>
-                ) : (
-                  <ul className="clip-list">
-                    {exportedClips.map((clip, index) => (
-                      <li key={clip.id} className="clip-row">
-                        <span className="clip-label">
-                          {index + 1}. [{clip.videoName}] {clip.clockTime}
-                          {clip.caption ? ` ／ ${clip.caption}` : ''}
-                        </span>
+        {videoUrl && entries.length > 0 && (
+          <section className="export-section">
+            <h2>カットを書き出す</h2>
+            <ul className="clip-list">
+              {sortedEntries.map((entry) => {
+                const done = exportedClips.some((c) => c.id === entry.id)
+                return (
+                  <li key={entry.id} className="clip-row">
+                    <span className="clip-label">
+                      {entry.clockTime || formatTimecode(entry.time)}
+                      {entry.caption ? ` ／ ${entry.caption}` : ''}
+                    </span>
+                    <button onClick={() => exportEntryClip(entry)} disabled={exportingEntryId === entry.id}>
+                      {exportingEntryId === entry.id ? '書き出し中…' : done ? '再書き出し' : '書き出す'}
+                    </button>
+                    {done && (
+                      <>
+                        <span className="clip-done">✓ 済み</span>
                         <button
-                          onClick={() => moveExportedClip(index, -1)}
-                          disabled={index === 0}
-                          title="上に移動"
-                          aria-label="上に移動"
+                          onClick={() => saveExportedClip(exportedClips.find((c) => c.id === entry.id)!)}
                         >
-                          ▲
+                          保存
                         </button>
-                        <button
-                          onClick={() => moveExportedClip(index, 1)}
-                          disabled={index === exportedClips.length - 1}
-                          title="下に移動"
-                          aria-label="下に移動"
-                        >
-                          ▼
-                        </button>
-                        <button
-                          className="log-delete"
-                          onClick={() => removeExportedClip(clip.id)}
-                          title="結合対象から外す"
-                          aria-label="結合対象から外す"
-                        >
-                          ✕
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-                <button
-                  className="export-button"
-                  onClick={combineAndSave}
-                  disabled={isCombining || exportedClips.length === 0}
-                >
-                  {isCombining
-                    ? `結合中… ${Math.round(combineProgress * 100)}%`
-                    : '結合して保存/共有'}
-                </button>
-              </div>
-            )}
+                      </>
+                    )}
+                  </li>
+                )
+              })}
+            </ul>
           </section>
+        )}
+
+        <section className="export-section">
+          <h2>結合 ({exportedClips.length})</h2>
+          <p className="combine-status">
+            書き出したカット（複数の動画・写真から集めたものでもOK）をまとめて1本の動画に結合します。
+          </p>
+          <button className="link-toggle" onClick={() => clipImportInputRef.current?.click()}>
+            ▸ 保存済みのクリップファイルを読み込んで追加
+          </button>
+          <input
+            ref={clipImportInputRef}
+            type="file"
+            accept="video/*"
+            multiple
+            hidden
+            onChange={onImportClips}
+          />
+          {exportedClips.length === 0 ? (
+            <p className="combine-status">
+              まだ書き出したカットがありません。上の「カットを書き出す」で書き出してください。
+            </p>
+          ) : (
+            <ul className="clip-list">
+              {exportedClips.map((clip, index) => (
+                <li key={clip.id} className="clip-row">
+                  <span className="clip-label">
+                    {index + 1}. [{clip.videoName}] {clip.clockTime}
+                    {clip.caption ? ` ／ ${clip.caption}` : ''}
+                  </span>
+                  <button
+                    onClick={() => moveExportedClip(index, -1)}
+                    disabled={index === 0}
+                    title="上に移動"
+                    aria-label="上に移動"
+                  >
+                    ▲
+                  </button>
+                  <button
+                    onClick={() => moveExportedClip(index, 1)}
+                    disabled={index === exportedClips.length - 1}
+                    title="下に移動"
+                    aria-label="下に移動"
+                  >
+                    ▼
+                  </button>
+                  <button
+                    className="log-delete"
+                    onClick={() => removeExportedClip(clip.id)}
+                    title="結合対象から外す"
+                    aria-label="結合対象から外す"
+                  >
+                    ✕
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          <button
+            className="export-button"
+            onClick={combineAndSave}
+            disabled={isCombining || exportedClips.length === 0}
+          >
+            {isCombining ? `結合中… ${Math.round(combineProgress * 100)}%` : '結合して保存/共有'}
+          </button>
+        </section>
       </main>
 
       <footer className="app-footer">

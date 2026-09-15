@@ -8,4 +8,5 @@ export interface LogEntry {
 export interface ProjectState {
   videoName: string
   entries: LogEntry[]
+  baseClockTime?: string
 }

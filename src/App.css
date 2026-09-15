@@ -51,10 +51,6 @@
     order: 3;
   }
 
-  .export-tabs button {
-    flex: 1;
-  }
-
   .clip-row {
     flex-wrap: wrap;
     gap: 0.5rem;
@@ -149,6 +145,23 @@
   white-space: nowrap;
 }
 
+.base-clock-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.base-clock-row label {
+  font-size: 0.85rem;
+  color: #9aa0a6;
+}
+
+.base-clock-hint {
+  color: #6b7280;
+  font-size: 0.75rem;
+}
+
 .export-section,
 .photo-section {
   grid-column: 1 / -1;
@@ -161,24 +174,22 @@
   border-radius: 8px;
 }
 
-.photo-section h2 {
+.export-section h2 {
   margin: 0;
   font-size: 1.1rem;
 }
 
-.export-tabs {
-  display: flex;
-  gap: 0.5rem;
+.link-toggle {
+  background: transparent;
+  color: #6ea8ff;
+  padding: 0.3rem 0;
+  align-self: flex-start;
+  min-height: 0;
 }
 
-.export-tab {
-  background: #23262e;
-  color: #9aa0a6;
-}
-
-.export-tab.active {
-  background: #1f6feb;
-  color: white;
+.link-toggle:hover {
+  background: transparent;
+  text-decoration: underline;
 }
 
 .clip-list {
