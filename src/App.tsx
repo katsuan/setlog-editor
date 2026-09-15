@@ -43,6 +43,14 @@ function loadFromStorage(videoName: string): LogEntry[] {
   }
 }
 
+interface ExportedClip {
+  id: string
+  videoName: string
+  clockTime: string
+  caption: string
+  blob: Blob
+}
+
 export default function App() {
   const [videoUrl, setVideoUrl] = useState<string | null>(null)
   const [videoName, setVideoName] = useState<string>('')
@@ -50,7 +58,7 @@ export default function App() {
   const [currentTime, setCurrentTime] = useState(0)
   const [activeId, setActiveId] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<'cut' | 'combine'>('cut')
-  const [clipBlobs, setClipBlobs] = useState<Record<string, Blob>>({})
+  const [exportedClips, setExportedClips] = useState<ExportedClip[]>([])
   const [exportingEntryId, setExportingEntryId] = useState<string | null>(null)
   const [isCombining, setIsCombining] = useState(false)
   const [combineProgress, setCombineProgress] = useState(0)
@@ -64,7 +72,8 @@ export default function App() {
     setVideoName(file.name)
     setEntries(loadFromStorage(file.name))
     setActiveId(null)
-    setClipBlobs({})
+    // exportedClips intentionally persists across video switches — combining
+    // is meant to span cuts taken from multiple different source videos.
   }, [])
 
   const onFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -143,32 +152,61 @@ export default function App() {
       setExportingEntryId(entry.id)
       try {
         const blob = await renderOverlayVideo(video, [entry])
-        setClipBlobs((prev) => ({ ...prev, [entry.id]: blob }))
+        const record: ExportedClip = {
+          id: entry.id,
+          videoName,
+          clockTime: entry.clockTime,
+          caption: entry.caption,
+          blob,
+        }
+        setExportedClips((prev) => {
+          const idx = prev.findIndex((c) => c.id === entry.id)
+          if (idx === -1) return [...prev, record]
+          const next = [...prev]
+          next[idx] = record
+          return next
+        })
       } catch (err) {
         alert(`カットの書き出しに失敗しました: ${err instanceof Error ? err.message : String(err)}`)
       } finally {
         setExportingEntryId(null)
       }
     },
-    [],
+    [videoName],
   )
 
+  const removeExportedClip = (id: string) => {
+    setExportedClips((prev) => prev.filter((c) => c.id !== id))
+  }
+
+  const moveExportedClip = (index: number, direction: -1 | 1) => {
+    setExportedClips((prev) => {
+      const target = index + direction
+      if (target < 0 || target >= prev.length) return prev
+      const next = [...prev]
+      ;[next[index], next[target]] = [next[target], next[index]]
+      return next
+    })
+  }
+
   const combineAndSave = useCallback(async () => {
-    const orderedBlobs = sortedEntries.map((e) => clipBlobs[e.id]).filter((b): b is Blob => !!b)
-    if (orderedBlobs.length !== sortedEntries.length) return
+    if (!exportedClips.length) return
     setIsCombining(true)
     setCombineProgress(0)
     try {
-      const blob = await combineClips(orderedBlobs, { onProgress: setCombineProgress })
+      const blob = await combineClips(
+        exportedClips.map((c) => c.blob),
+        { onProgress: setCombineProgress },
+      )
       const ext = blob.type.includes('mp4') ? 'mp4' : 'webm'
-      const filename = `${videoName ? videoName.replace(/\.[^.]+$/, '') : 'setlog'}.${ext}`
+      const filename = `setlog-combined.${ext}`
       await saveOrShareBlob(blob, filename)
     } catch (err) {
       alert(`結合に失敗しました: ${err instanceof Error ? err.message : String(err)}`)
     } finally {
       setIsCombining(false)
     }
-  }, [clipBlobs, sortedEntries, videoName])
+  }, [exportedClips])
 
   // keyboard shortcuts
   useEffect(() => {
@@ -274,7 +312,7 @@ export default function App() {
           />
         </section>
 
-        {videoUrl && entries.length > 0 && (
+        {(exportedClips.length > 0 || (videoUrl && entries.length > 0)) && (
           <section className="export-section">
             <div className="export-tabs">
               <button
@@ -287,48 +325,94 @@ export default function App() {
                 className={activeTab === 'combine' ? 'export-tab active' : 'export-tab'}
                 onClick={() => setActiveTab('combine')}
               >
-                ② 結合
+                ② 結合 ({exportedClips.length})
               </button>
             </div>
 
             {activeTab === 'cut' && (
-              <ul className="clip-list">
-                {sortedEntries.map((entry) => (
-                  <li key={entry.id} className="clip-row">
-                    <span className="clip-label">
-                      {entry.clockTime || formatTimecode(entry.time)}
-                      {entry.caption ? ` ／ ${entry.caption}` : ''}
-                    </span>
-                    <button
-                      onClick={() => exportEntryClip(entry)}
-                      disabled={exportingEntryId === entry.id}
-                    >
-                      {exportingEntryId === entry.id
-                        ? '書き出し中…'
-                        : clipBlobs[entry.id]
-                          ? '再書き出し'
-                          : '書き出す'}
-                    </button>
-                    {clipBlobs[entry.id] && <span className="clip-done">✓ 済み</span>}
-                  </li>
-                ))}
-              </ul>
+              <>
+                {videoUrl && entries.length > 0 ? (
+                  <ul className="clip-list">
+                    {sortedEntries.map((entry) => {
+                      const done = exportedClips.some((c) => c.id === entry.id)
+                      return (
+                        <li key={entry.id} className="clip-row">
+                          <span className="clip-label">
+                            {entry.clockTime || formatTimecode(entry.time)}
+                            {entry.caption ? ` ／ ${entry.caption}` : ''}
+                          </span>
+                          <button
+                            onClick={() => exportEntryClip(entry)}
+                            disabled={exportingEntryId === entry.id}
+                          >
+                            {exportingEntryId === entry.id
+                              ? '書き出し中…'
+                              : done
+                                ? '再書き出し'
+                                : '書き出す'}
+                          </button>
+                          {done && <span className="clip-done">✓ 済み</span>}
+                        </li>
+                      )
+                    })}
+                  </ul>
+                ) : (
+                  <p className="combine-status">
+                    動画を開いてカットをマークすると、ここに書き出しリストが表示されます。
+                  </p>
+                )}
+              </>
             )}
 
             {activeTab === 'combine' && (
               <div className="combine-panel">
                 <p className="combine-status">
-                  {Object.keys(clipBlobs).filter((id) => sortedEntries.some((e) => e.id === id)).length}{' '}
-                  / {sortedEntries.length} カット書き出し済み
+                  複数の動画ファイルから書き出したカットをまとめて1本に結合できます。
                 </p>
+                {exportedClips.length === 0 ? (
+                  <p className="combine-status">
+                    まだ書き出したカットがありません。「①カット書き出し」で書き出してください。
+                  </p>
+                ) : (
+                  <ul className="clip-list">
+                    {exportedClips.map((clip, index) => (
+                      <li key={clip.id} className="clip-row">
+                        <span className="clip-label">
+                          {index + 1}. [{clip.videoName}] {clip.clockTime}
+                          {clip.caption ? ` ／ ${clip.caption}` : ''}
+                        </span>
+                        <button
+                          onClick={() => moveExportedClip(index, -1)}
+                          disabled={index === 0}
+                          title="上に移動"
+                          aria-label="上に移動"
+                        >
+                          ▲
+                        </button>
+                        <button
+                          onClick={() => moveExportedClip(index, 1)}
+                          disabled={index === exportedClips.length - 1}
+                          title="下に移動"
+                          aria-label="下に移動"
+                        >
+                          ▼
+                        </button>
+                        <button
+                          className="log-delete"
+                          onClick={() => removeExportedClip(clip.id)}
+                          title="結合対象から外す"
+                          aria-label="結合対象から外す"
+                        >
+                          ✕
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
                 <button
                   className="export-button"
                   onClick={combineAndSave}
-                  disabled={
-                    isCombining ||
-                    sortedEntries.length === 0 ||
-                    sortedEntries.some((e) => !clipBlobs[e.id])
-                  }
+                  disabled={isCombining || exportedClips.length === 0}
                 >
                   {isCombining
                     ? `結合中… ${Math.round(combineProgress * 100)}%`
