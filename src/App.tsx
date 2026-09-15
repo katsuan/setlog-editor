@@ -4,7 +4,7 @@ import LogList from './components/LogList'
 import type { LogEntry, ProjectState } from './types'
 import { formatTimecode } from './utils/time'
 import { exportCsv, exportJson, exportSrt } from './utils/export'
-import { renderOverlayVideo } from './utils/videoExport'
+import { CUT_DURATION, renderOverlayVideo } from './utils/videoExport'
 import './App.css'
 
 function storageKey(videoName: string) {
@@ -73,6 +73,22 @@ export default function App() {
     video.play().catch(() => {})
   }
 
+  const previewCut = useCallback((time: number) => {
+    const video = videoRef.current
+    if (!video) return
+    video.currentTime = time
+    video.play().catch(() => {})
+    const stopAt = time + CUT_DURATION
+    const onTimeUpdate = () => {
+      if (video.currentTime >= stopAt) {
+        video.pause()
+        video.currentTime = stopAt
+        video.removeEventListener('timeupdate', onTimeUpdate)
+      }
+    }
+    video.addEventListener('timeupdate', onTimeUpdate)
+  }, [])
+
   const changeCaption = (id: string, caption: string) => {
     setEntries((prev) => prev.map((e) => (e.id === id ? { ...e, caption } : e)))
   }
@@ -97,10 +113,24 @@ export default function App() {
       const blob = await renderOverlayVideo(video, entries, {
         onProgress: setExportProgress,
       })
+      const ext = blob.type.includes('mp4') ? 'mp4' : 'webm'
+      const filename = `${videoName ? videoName.replace(/\.[^.]+$/, '') : 'setlog'}.${ext}`
+      const file = new File([blob], filename, { type: blob.type })
+
+      if (navigator.canShare?.({ files: [file] })) {
+        try {
+          await navigator.share({ files: [file], title: filename })
+          return
+        } catch (shareErr) {
+          if (shareErr instanceof Error && shareErr.name === 'AbortError') return
+          // fall through to download if share failed for another reason
+        }
+      }
+
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `${videoName ? videoName.replace(/\.[^.]+$/, '') : 'setlog'}.webm`
+      a.download = filename
       a.click()
       URL.revokeObjectURL(url)
     } catch (err) {
@@ -185,7 +215,7 @@ export default function App() {
                 onClick={exportOverlayVideo}
                 disabled={isExporting || !entries.length}
               >
-                {isExporting ? `書き出し中… ${Math.round(exportProgress * 100)}%` : '動画を書き出す (WebM・1カット2秒)'}
+                {isExporting ? `書き出し中… ${Math.round(exportProgress * 100)}%` : '動画を書き出す・保存/共有 (1カット2秒)'}
               </button>
             </div>
           )}
@@ -218,6 +248,7 @@ export default function App() {
             entries={entries}
             activeId={activeId}
             onSeek={seekTo}
+            onPreview={previewCut}
             onChangeCaption={changeCaption}
             onDelete={deleteEntry}
           />

@@ -5,11 +5,19 @@ interface Props {
   entries: LogEntry[]
   activeId: string | null
   onSeek: (time: number) => void
+  onPreview: (time: number) => void
   onChangeCaption: (id: string, caption: string) => void
   onDelete: (id: string) => void
 }
 
-export default function LogList({ entries, activeId, onSeek, onChangeCaption, onDelete }: Props) {
+export default function LogList({
+  entries,
+  activeId,
+  onSeek,
+  onPreview,
+  onChangeCaption,
+  onDelete,
+}: Props) {
   const sorted = [...entries].sort((a, b) => a.time - b.time)
 
   if (sorted.length === 0) {
@@ -22,6 +30,13 @@ export default function LogList({ entries, activeId, onSeek, onChangeCaption, on
         <li key={entry.id} className={entry.id === activeId ? 'log-item active' : 'log-item'}>
           <button className="log-time" onClick={() => onSeek(entry.time)} title="この時間に移動">
             {formatTimecode(entry.time)}
+          </button>
+          <button
+            className="log-preview"
+            onClick={() => onPreview(entry.time)}
+            title="このカット範囲（2秒）を再生"
+          >
+            ▶︎ プレビュー
           </button>
           <input
             className="log-caption"

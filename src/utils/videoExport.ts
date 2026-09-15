@@ -1,7 +1,7 @@
 import type { LogEntry } from '../types'
 import { formatTimecode } from './time'
 
-const CUT_DURATION = 2 // seconds per log entry
+export const CUT_DURATION = 2 // seconds per log entry
 
 function drawFrame(
   ctx: CanvasRenderingContext2D,
@@ -78,9 +78,17 @@ export async function renderOverlayVideo(
     ...(audioTrack ? [audioTrack] : []),
   ])
 
-  const mimeType = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm']
-    .find((t) => MediaRecorder.isTypeSupported(t))
-  if (!mimeType) throw new Error('このブラウザは WebM の書き出しに対応していません')
+  // MP4 first: widely accepted by SNS apps (Instagram/LINE/X) without conversion.
+  // WebM as fallback for browsers without MediaRecorder MP4 support.
+  const mimeType = [
+    'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+    'video/mp4;codecs=avc1,mp4a',
+    'video/mp4',
+    'video/webm;codecs=vp9,opus',
+    'video/webm;codecs=vp8,opus',
+    'video/webm',
+  ].find((t) => MediaRecorder.isTypeSupported(t))
+  if (!mimeType) throw new Error('このブラウザは動画の書き出しに対応していません')
 
   const recorder = new MediaRecorder(combinedStream, { mimeType, videoBitsPerSecond: 8_000_000 })
   const chunks: Blob[] = []

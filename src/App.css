@@ -225,6 +225,19 @@ button:disabled {
   min-height: 2.5rem;
 }
 
+.log-preview {
+  background: #23262e;
+  color: #9aa0a6;
+  padding: 0.5rem 0.6rem;
+  white-space: nowrap;
+  min-height: 2.5rem;
+  font-size: 0.8rem;
+}
+
+.log-preview:hover {
+  background: #2a2e37;
+}
+
 .log-caption {
   flex: 1;
   background: transparent;
