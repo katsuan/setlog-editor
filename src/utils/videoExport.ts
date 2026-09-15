@@ -57,6 +57,13 @@ function drawFrame(
 }
 
 function seekTo(video: HTMLVideoElement, time: number): Promise<void> {
+  // Setting currentTime to (approximately) the value it already holds is a
+  // no-op in most browsers and never fires 'seeked' — which previously hung
+  // export forever whenever a cut was exported right after marking it,
+  // since markHere leaves the video paused exactly at entry.time already.
+  if (Math.abs(video.currentTime - time) < 0.03) {
+    return Promise.resolve()
+  }
   return new Promise((resolve) => {
     const onSeeked = () => {
       video.removeEventListener('seeked', onSeeked)
