@@ -100,19 +100,6 @@
   border-radius: 8px;
 }
 
-.title-input {
-  background: #0f1116;
-  border: 1px solid #2a2e37;
-  border-radius: 6px;
-  color: #e6e6e6;
-  padding: 0.5rem 0.6rem;
-  font-size: 0.9rem;
-}
-
-.title-input:focus {
-  outline: 1px solid #1f6feb;
-}
-
 .export-button {
   background: #2ea043;
   align-self: flex-start;
