@@ -15,10 +15,15 @@ function drawFrame(
 
   const timeText = formatTimecode(entry.time)
   const captionText = entry.caption
-  const centerY = h * 0.45
   const timeFontSize = Math.round(w * 0.09)
   const captionFontSize = Math.round(w * 0.06)
   const lineGap = Math.round(timeFontSize * 0.9)
+
+  // Two-line block (time + caption) centered as a whole on the frame.
+  const hasCaption = captionText.length > 0
+  const blockHeight = hasCaption ? timeFontSize + lineGap : timeFontSize
+  const timeY = h / 2 - blockHeight / 2 + timeFontSize / 2
+  const captionY = timeY + lineGap
 
   ctx.textAlign = 'center'
   ctx.textBaseline = 'middle'
@@ -27,11 +32,11 @@ function drawFrame(
   ctx.fillStyle = '#ffffff'
   ctx.shadowColor = 'rgba(0,0,0,0.7)'
   ctx.shadowBlur = Math.round(timeFontSize * 0.15)
-  ctx.fillText(timeText, w / 2, centerY)
+  ctx.fillText(timeText, w / 2, timeY)
 
-  if (captionText) {
+  if (hasCaption) {
     ctx.font = `bold ${captionFontSize}px "Hiragino Sans", "Yu Gothic", sans-serif`
-    ctx.fillText(captionText, w / 2, centerY + lineGap, w * 0.9)
+    ctx.fillText(captionText, w / 2, captionY, w * 0.9)
   }
   ctx.shadowBlur = 0
 }
