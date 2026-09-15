@@ -42,60 +42,6 @@
   gap: 1.25rem;
 }
 
-@media (max-width: 800px) {
-  .app-main {
-    grid-template-columns: 1fr;
-  }
-
-  .app {
-    padding: 1rem 0.75rem 2rem;
-  }
-
-  .file-controls,
-  .log-actions {
-    flex-direction: column;
-    align-items: stretch;
-  }
-
-  .file-controls button,
-  .log-actions button,
-  .export-button {
-    width: 100%;
-  }
-
-  .log-item {
-    flex-wrap: wrap;
-  }
-
-  .log-caption {
-    flex-basis: 100%;
-    order: 3;
-  }
-
-  .clip-row {
-    flex-wrap: wrap;
-    gap: 0.5rem;
-  }
-
-  .clip-label {
-    flex-basis: 100%;
-    white-space: normal;
-  }
-
-  .clip-row > button {
-    flex: 1;
-    min-width: 3rem;
-  }
-
-  .clip-list {
-    gap: 0.6rem;
-  }
-
-  .photo-section .clip-row {
-    gap: 0.5rem;
-  }
-}
-
 .player-section,
 .log-section,
 .export-section,
@@ -446,4 +392,62 @@ button:disabled {
   margin-top: 2rem;
   color: var(--text-muted);
   font-size: 0.8rem;
+}
+
+/* Mobile overrides — kept last so they win over the base rules above
+   (same selector specificity, so source order decides the cascade). */
+@media (max-width: 800px) {
+  .app-main {
+    grid-template-columns: 1fr;
+  }
+
+  .app {
+    padding: 1rem 0.75rem 2rem;
+  }
+
+  .file-controls,
+  .log-actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .file-controls button,
+  .log-actions button,
+  .export-button {
+    width: 100%;
+  }
+
+  .log-item {
+    flex-wrap: wrap;
+  }
+
+  .log-caption {
+    flex-basis: 100%;
+    order: 3;
+  }
+
+  .clip-row {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+
+  .clip-label {
+    flex-basis: 100%;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: clip;
+  }
+
+  .clip-row > button {
+    flex: 1;
+    min-width: 3rem;
+  }
+
+  .clip-list {
+    gap: 0.6rem;
+  }
+
+  .photo-section .clip-row {
+    gap: 0.5rem;
+  }
 }
