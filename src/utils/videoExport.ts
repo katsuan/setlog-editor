@@ -65,14 +65,21 @@ export interface ExportOptions {
 
 const MP4_THEN_WEBM = [
   // MP4 first: widely accepted by SNS apps (Instagram/LINE/X) without conversion.
-  // WebM as fallback for browsers without MediaRecorder MP4 support.
-  'video/mp4;codecs=avc1.42E01E,mp4a.40.2',
+  // Prefer higher H.264 profiles (better quality per bit) before falling back
+  // to Baseline, and WebM for browsers without MediaRecorder MP4 support.
+  'video/mp4;codecs=avc1.640028,mp4a.40.2', // High profile
+  'video/mp4;codecs=avc1.4d0028,mp4a.40.2', // Main profile
+  'video/mp4;codecs=avc1.42E01E,mp4a.40.2', // Baseline profile
   'video/mp4;codecs=avc1,mp4a',
   'video/mp4',
   'video/webm;codecs=vp9,opus',
   'video/webm;codecs=vp8,opus',
   'video/webm',
 ]
+
+// Short clips, so a generous bitrate doesn't cost much size while noticeably
+// reducing block/banding artifacts from the canvas-capture re-encode.
+const VIDEO_BITS_PER_SECOND = 16_000_000
 
 function pickMimeType(): string {
   const mimeType = MP4_THEN_WEBM.find((t) => MediaRecorder.isTypeSupported(t))
@@ -109,7 +116,7 @@ export async function renderOverlayVideo(
 
   const mimeType = pickMimeType()
 
-  const recorder = new MediaRecorder(combinedStream, { mimeType, videoBitsPerSecond: 8_000_000 })
+  const recorder = new MediaRecorder(combinedStream, { mimeType, videoBitsPerSecond: VIDEO_BITS_PER_SECOND })
   const chunks: Blob[] = []
   recorder.ondataavailable = (e) => {
     if (e.data.size > 0) chunks.push(e.data)
@@ -230,7 +237,7 @@ export async function renderImageClip(
 
   const canvasStream = canvas.captureStream(30)
   const mimeType = pickMimeType()
-  const recorder = new MediaRecorder(canvasStream, { mimeType, videoBitsPerSecond: 8_000_000 })
+  const recorder = new MediaRecorder(canvasStream, { mimeType, videoBitsPerSecond: VIDEO_BITS_PER_SECOND })
   const chunks: Blob[] = []
   recorder.ondataavailable = (e) => {
     if (e.data.size > 0) chunks.push(e.data)
@@ -302,7 +309,7 @@ export async function combineClips(
   ])
 
   const mimeType = pickMimeType()
-  const recorder = new MediaRecorder(combinedStream, { mimeType, videoBitsPerSecond: 8_000_000 })
+  const recorder = new MediaRecorder(combinedStream, { mimeType, videoBitsPerSecond: VIDEO_BITS_PER_SECOND })
   const chunks: Blob[] = []
   recorder.ondataavailable = (e) => {
     if (e.data.size > 0) chunks.push(e.data)
