@@ -147,9 +147,12 @@ export async function renderOverlayVideo(
         // or blank frame while play() is still buffering.
         drawFrame(ctx, video, canvas, entry)
       }
-      await video.play()
-
       const segmentStart = performance.now()
+      const playPromise = video.play()
+      // Start the draw loop immediately alongside play() (not after it
+      // resolves) so decoded frames get painted as soon as they're ready,
+      // instead of leaving the just-seeked still frame recorded for the
+      // whole duration of play()'s buffering/startup latency.
       await new Promise<void>((resolve) => {
         const tick = () => {
           const elapsed = (performance.now() - segmentStart) / 1000
@@ -162,6 +165,7 @@ export async function renderOverlayVideo(
         }
         requestAnimationFrame(tick)
       })
+      await playPromise.catch(() => {})
 
       video.pause()
       options.onProgress?.((i + 1) / sorted.length)
@@ -175,19 +179,21 @@ export async function renderOverlayVideo(
   return stopPromise
 }
 
+// Waits for 'loadeddata' (not just 'loadedmetadata') so the video's first
+// frame is actually decoded and paintable, not just its dimensions known.
 function loadClipMetadata(video: HTMLVideoElement): Promise<void> {
   return new Promise((resolve, reject) => {
     const onLoaded = () => {
-      video.removeEventListener('loadedmetadata', onLoaded)
+      video.removeEventListener('loadeddata', onLoaded)
       video.removeEventListener('error', onError)
       resolve()
     }
     const onError = () => {
-      video.removeEventListener('loadedmetadata', onLoaded)
+      video.removeEventListener('loadeddata', onLoaded)
       video.removeEventListener('error', onError)
       reject(new Error('クリップの読み込みに失敗しました'))
     }
-    video.addEventListener('loadedmetadata', onLoaded)
+    video.addEventListener('loadeddata', onLoaded)
     video.addEventListener('error', onError)
   })
 }
@@ -284,96 +290,109 @@ export async function combineClips(
 ): Promise<Blob> {
   if (!clipBlobs.length) throw new Error('結合するクリップがありません')
 
-  const probe = document.createElement('video')
-  probe.muted = true
-  probe.src = URL.createObjectURL(clipBlobs[0])
-  await loadClipMetadata(probe)
-  const width = probe.videoWidth
-  const height = probe.videoHeight
-  URL.revokeObjectURL(probe.src)
-
-  const canvas = document.createElement('canvas')
-  canvas.width = width
-  canvas.height = height
-  const ctx = canvas.getContext('2d')
-  if (!ctx) throw new Error('Canvas 2D context を取得できませんでした')
-
-  const canvasStream = canvas.captureStream(30)
-  const audioCtx = new AudioContext()
-  await audioCtx.resume()
-  const destination = audioCtx.createMediaStreamDestination()
-
-  const combinedStream = new MediaStream([
-    ...canvasStream.getVideoTracks(),
-    ...destination.stream.getAudioTracks(),
-  ])
-
-  const mimeType = pickMimeType()
-  const recorder = new MediaRecorder(combinedStream, { mimeType, videoBitsPerSecond: VIDEO_BITS_PER_SECOND })
-  const chunks: Blob[] = []
-  recorder.ondataavailable = (e) => {
-    if (e.data.size > 0) chunks.push(e.data)
-  }
-  const stopPromise = new Promise<Blob>((resolve, reject) => {
-    recorder.onstop = () => resolve(new Blob(chunks, { type: mimeType }))
-    recorder.onerror = (e) => {
-      const message = e instanceof ErrorEvent ? e.message : 'MediaRecorder でエラーが発生しました'
-      reject(new Error(message))
-    }
-  })
-
+  // Preload every clip's first frame up front. Doing this mid-loop (loading
+  // clip N+1 only once clip N finishes) left a visible freeze at every cut —
+  // the canvas kept re-recording clip N+1's still, undecoded first frame
+  // while it buffered. Preloading means each switch just starts playback on
+  // an already-decoded video element.
   const objectUrls: string[] = []
+  const clipVideos: HTMLVideoElement[] = []
   try {
     for (let i = 0; i < clipBlobs.length; i++) {
-      let clipVideo: HTMLVideoElement
+      const clipVideo = document.createElement('video')
+      clipVideo.muted = true // keep silent on speakers; audio still flows through the Web Audio graph below
+      clipVideo.playsInline = true
+      clipVideo.preload = 'auto'
+      const url = URL.createObjectURL(clipBlobs[i])
+      objectUrls.push(url)
+      clipVideo.src = url
       try {
-        clipVideo = document.createElement('video')
-        clipVideo.muted = true // keep silent on speakers; audio still flows through the Web Audio graph below
-        clipVideo.playsInline = true
-        const url = URL.createObjectURL(clipBlobs[i])
-        objectUrls.push(url)
-        clipVideo.src = url
         await loadClipMetadata(clipVideo)
       } catch (err) {
         throw new Error(
           `${i + 1}番目のクリップの読み込みに失敗しました: ${err instanceof Error ? err.message : String(err)}`,
         )
       }
-
-      let source: MediaElementAudioSourceNode
-      try {
-        source = audioCtx.createMediaElementSource(clipVideo)
-        source.connect(destination)
-
-        // Paint the clip's first frame before playback so the recorder never
-        // captures a blank canvas between clips.
-        ctx.drawImage(clipVideo, 0, 0, width, height)
-        if (i === 0) recorder.start()
-
-        await clipVideo.play()
-      } catch (err) {
-        throw new Error(
-          `${i + 1}番目のクリップの再生に失敗しました: ${err instanceof Error ? err.message : String(err)}`,
-        )
-      }
-      let stopped = false
-      const drawLoop = () => {
-        if (stopped) return
-        ctx.drawImage(clipVideo, 0, 0, width, height)
-        requestAnimationFrame(drawLoop)
-      }
-      requestAnimationFrame(drawLoop)
-
-      await waitForEnded(clipVideo)
-      stopped = true
-      source.disconnect()
-      options.onProgress?.((i + 1) / clipBlobs.length)
+      clipVideos.push(clipVideo)
     }
-  } finally {
-    recorder.stop()
-    objectUrls.forEach((url) => URL.revokeObjectURL(url))
-    await audioCtx.close()
-  }
 
-  return stopPromise
+    const width = clipVideos[0].videoWidth
+    const height = clipVideos[0].videoHeight
+
+    const canvas = document.createElement('canvas')
+    canvas.width = width
+    canvas.height = height
+    const ctx = canvas.getContext('2d')
+    if (!ctx) throw new Error('Canvas 2D context を取得できませんでした')
+
+    const canvasStream = canvas.captureStream(30)
+    const audioCtx = new AudioContext()
+    await audioCtx.resume()
+    const destination = audioCtx.createMediaStreamDestination()
+
+    const combinedStream = new MediaStream([
+      ...canvasStream.getVideoTracks(),
+      ...destination.stream.getAudioTracks(),
+    ])
+
+    const mimeType = pickMimeType()
+    const recorder = new MediaRecorder(combinedStream, {
+      mimeType,
+      videoBitsPerSecond: VIDEO_BITS_PER_SECOND,
+    })
+    const chunks: Blob[] = []
+    recorder.ondataavailable = (e) => {
+      if (e.data.size > 0) chunks.push(e.data)
+    }
+    const stopPromise = new Promise<Blob>((resolve, reject) => {
+      recorder.onstop = () => resolve(new Blob(chunks, { type: mimeType }))
+      recorder.onerror = (e) => {
+        const message = e instanceof ErrorEvent ? e.message : 'MediaRecorder でエラーが発生しました'
+        reject(new Error(message))
+      }
+    })
+
+    try {
+      ctx.drawImage(clipVideos[0], 0, 0, width, height)
+      recorder.start()
+
+      for (let i = 0; i < clipVideos.length; i++) {
+        const clipVideo = clipVideos[i]
+        let source: MediaElementAudioSourceNode
+        try {
+          source = audioCtx.createMediaElementSource(clipVideo)
+          source.connect(destination)
+          if (i > 0) ctx.drawImage(clipVideo, 0, 0, width, height)
+
+          let stopped = false
+          const drawLoop = () => {
+            if (stopped) return
+            ctx.drawImage(clipVideo, 0, 0, width, height)
+            requestAnimationFrame(drawLoop)
+          }
+          // Start the draw loop immediately alongside play() instead of
+          // waiting for the play() promise first, so decoded frames get
+          // painted as soon as they're available rather than after an
+          // extra serialized wait.
+          requestAnimationFrame(drawLoop)
+          await clipVideo.play()
+          await waitForEnded(clipVideo)
+          stopped = true
+          source.disconnect()
+        } catch (err) {
+          throw new Error(
+            `${i + 1}番目のクリップの再生に失敗しました: ${err instanceof Error ? err.message : String(err)}`,
+          )
+        }
+        options.onProgress?.((i + 1) / clipVideos.length)
+      }
+    } finally {
+      recorder.stop()
+      await audioCtx.close()
+    }
+
+    return await stopPromise
+  } finally {
+    objectUrls.forEach((url) => URL.revokeObjectURL(url))
+  }
 }
